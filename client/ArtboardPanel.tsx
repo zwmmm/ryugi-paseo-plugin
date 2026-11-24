@@ -1,27 +1,38 @@
 import React, { useState, useMemo } from "react";
 import { View, Text, ScrollView, Pressable, TextInput } from "react-native";
-import type { PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
+import type { PluginAgentPanelProps } from "@getpaseo/plugin/client";
 import { usePaseo, useRpc } from "@getpaseo/plugin/client";
-import { getRealDataRpc, addRealCommentRpc } from "../shared/contracts.js";
+import { getRealDataRpc, addRealCommentRpc, initSessionSingletonRpc } from "../shared/contracts.js";
 
-export function ArtboardPanel({ theme, layout }: PluginWorkspacePanelProps) {
+export function ArtboardPanel({ theme, layout, agentId }: PluginAgentPanelProps) {
   const paseo = usePaseo();
   const getRealData = useRpc(getRealDataRpc);
   const addRealComment = useRpc(addRealCommentRpc);
+  const initSingleton = useRpc(initSessionSingletonRpc);
 
   const [data, setData] = useState<Awaited<ReturnType<typeof getRealData>> | null>(null);
-  const [selectedBoardId, setSelectedBoardId] = useState<string>("variant-a");
+  const [selectedArtArtifact, setSelectedArtArtifact] = useState<string | undefined>();
+  const [selectedBoardId, setSelectedBoardId] = useState<string>("");
   const [feedbackText, setFeedbackText] = useState("");
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
-  const refresh = React.useCallback(async () => {
+  const refresh = React.useCallback(async (artArt?: string) => {
     try {
-      const res = await getRealData({});
+      const res = await getRealData({
+        agentId,
+        artboardArtifact: artArt || selectedArtArtifact,
+      });
       setData(res);
+      if (!selectedArtArtifact) {
+        setSelectedArtArtifact(res.currentArtboard.artifact);
+      }
+      if (res.currentArtboard.boards.length > 0 && !selectedBoardId) {
+        setSelectedBoardId(res.currentArtboard.boards[0].id);
+      }
     } catch (e: any) {
       setStatusMsg("加载画板失败: " + e.message);
     }
-  }, [getRealData]);
+  }, [getRealData, agentId, selectedArtArtifact, selectedBoardId]);
 
   React.useEffect(() => {
     refresh();
@@ -39,40 +50,47 @@ export function ArtboardPanel({ theme, layout }: PluginWorkspacePanelProps) {
         backgroundColor: theme.colors.surface0,
         padding: layout.compact ? 12 : 18,
       },
-      header: {
-        marginBottom: 12,
-      },
-      title: {
-        fontSize: layout.compact ? 16 : 18,
-        fontWeight: "bold" as const,
-        color: theme.colors.foreground,
-      },
-      subtitle: {
-        fontSize: 12,
-        color: theme.colors.foregroundMuted,
-        marginTop: 2,
-      },
-      tabRow: {
+      topBar: {
         flexDirection: "row" as const,
-        gap: 8,
+        alignItems: "center" as const,
+        justifyContent: "space-between" as const,
         marginBottom: 12,
+        flexWrap: "wrap" as const,
+        gap: 8,
       },
-      tabItem: {
-        paddingVertical: 6,
-        paddingHorizontal: 12,
-        borderRadius: 6,
+      selectorRow: {
+        flexDirection: "row" as const,
+        alignItems: "center" as const,
+        gap: 6,
+        flexWrap: "wrap" as const,
+      },
+      chip: {
+        paddingVertical: 4,
+        paddingHorizontal: 10,
+        borderRadius: 14,
         backgroundColor: theme.colors.surface1,
         borderWidth: 1,
         borderColor: theme.colors.border,
       },
-      tabItemActive: {
+      chipActive: {
         backgroundColor: theme.colors.accent,
         borderColor: theme.colors.accent,
       },
-      tabItemText: {
-        fontSize: 12,
+      chipText: {
+        fontSize: 11,
         color: theme.colors.foreground,
-        fontWeight: "600" as const,
+      },
+      chipTextActive: {
+        color: theme.colors.accentForeground,
+        fontWeight: "bold" as const,
+      },
+      btnSingleton: {
+        backgroundColor: theme.colors.surface2,
+        paddingVertical: 5,
+        paddingHorizontal: 10,
+        borderRadius: 6,
+        borderWidth: 1,
+        borderColor: theme.colors.accent,
       },
       contentRow: {
         flex: 1,
@@ -95,6 +113,12 @@ export function ArtboardPanel({ theme, layout }: PluginWorkspacePanelProps) {
         borderWidth: 1,
         borderColor: theme.colors.border,
         padding: 14,
+      },
+      headerTitle: {
+        fontSize: layout.compact ? 15 : 17,
+        fontWeight: "bold" as const,
+        color: theme.colors.foreground,
+        marginBottom: 4,
       },
       cardWrapper: {
         flexDirection: "row" as const,
@@ -178,10 +202,17 @@ export function ArtboardPanel({ theme, layout }: PluginWorkspacePanelProps) {
     [theme, layout.compact]
   );
 
+  const handleInitSingleton = async () => {
+    setStatusMsg("正在为此会话锁定唯一的专属原型画板...");
+    const res = await initSingleton({ agentId });
+    setSelectedArtArtifact(res.artboardArtifact);
+    await refresh(res.artboardArtifact);
+    setStatusMsg(`✓ 已锁定会话专属画板: ${res.artboardArtifact}`);
+  };
+
   const handleUpdateStatus = async (verdict: "PASS" | "REJECT") => {
     if (!currentArtboard || !activeBoard) return;
     setStatusMsg(`正在将方案 [${activeBoard.name}] 判定为 ${verdict}...`);
-    // 写入真实评论
     const commentText = `[${verdict}] 评审意见: ${feedbackText.trim() || "符合设计规范，允许合入"}`;
     await addRealComment({
       artifact: currentArtboard.artifact,
@@ -189,22 +220,16 @@ export function ArtboardPanel({ theme, layout }: PluginWorkspacePanelProps) {
       text: commentText,
     });
     setFeedbackText("");
-    setStatusMsg(`✓ 方案 [${activeBoard.name}] 已判定为 ${verdict} 并记入 Ryugi 存储！可在输入框通过 @ 实时引用`);
+    setStatusMsg(`✓ 方案 [${activeBoard.name}] 已判定为 ${verdict}！`);
     await refresh();
   };
 
   const handleSendToAgent = async () => {
     if (!activeBoard || !currentArtboard) return;
     try {
-      const agents = await paseo.agents.list();
-      const firstEntry = agents.entries[0];
-      if (firstEntry?.agent?.id) {
-        const textPayload = `【Ryugi 画板方案审阅】\n目标画板 [${currentArtboard.artifact}] 方案 [${activeBoard.name}]：\n- 方案标识: #${activeBoard.id}\n- 渲染文件: ${activeBoard.file} (${activeBoard.width}x${activeBoard.height})\n- 评审要求: ${feedbackText.trim() || "请根据此方案布局推进开发"}`;
-        await paseo.agents.ref(firstEntry.agent.id).send(textPayload);
-        setStatusMsg(`已直接推送到 Agent [${firstEntry.agent.id.slice(-6)}]！`);
-      } else {
-        setStatusMsg("当前无活跃 Agent，可通过输入框附件(@)进行引用");
-      }
+      const textPayload = `【Ryugi 画板方案审阅】\n目标画板 [${currentArtboard.artifact}] 方案 [${activeBoard.name}]：\n- 方案标识: #${activeBoard.id}\n- 渲染规格: ${activeBoard.width}x${activeBoard.height} (${activeBoard.file})\n- 评审要求: ${feedbackText.trim() || "请根据此方案布局推进开发"}`;
+      await paseo.agents.ref(agentId).send(textPayload);
+      setStatusMsg(`已直接推送到当前 Agent 对话！`);
     } catch (e: any) {
       setStatusMsg("发送提示: " + e.message);
     }
@@ -212,56 +237,98 @@ export function ArtboardPanel({ theme, layout }: PluginWorkspacePanelProps) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>{currentArtboard?.artifact ?? "加载 Ryugi 真实画板..."}</Text>
-        <Text style={styles.subtitle}>
-          基于本地 canvas.json 多方案对比与渲染。可直接在面板中 Pass / Reject 或向 Agent 发送提示
-        </Text>
+      {/* 顶部工具栏：选择画板工件或锁定单例 */}
+      <View style={styles.topBar}>
+        <View style={styles.selectorRow}>
+          <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>画板工件:</Text>
+          {data?.availableArtboards.length === 0 ? (
+            <Text style={{ color: theme.colors.foregroundMuted, fontSize: 11 }}>
+              当前项目无画板工件
+            </Text>
+          ) : (
+            data?.availableArtboards.map((art) => {
+              const isSel = (selectedArtArtifact || currentArtboard?.artifact) === art;
+              return (
+                <Pressable
+                  key={art}
+                  onPress={() => {
+                    setSelectedArtArtifact(art);
+                    refresh(art);
+                  }}
+                  style={[styles.chip, isSel && styles.chipActive]}
+                >
+                  <Text style={isSel ? styles.chipTextActive : styles.chipText}>
+                    {art.replace("artboard/", "")}
+                  </Text>
+                </Pressable>
+              );
+            })
+          )}
+        </View>
+
+        <Pressable style={styles.btnSingleton} onPress={handleInitSingleton}>
+          <Text style={{ color: theme.colors.accent, fontSize: 11, fontWeight: "bold" }}>
+            + 锁定会话专属画板
+          </Text>
+        </Pressable>
       </View>
 
       <View style={styles.contentRow}>
         {/* 画板方案卡片对比 */}
         <View style={styles.canvasArea}>
           <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12, marginBottom: 12 }}>
-            工件渲染地址: {currentArtboard?.webUrl || "正在生成..."}
+            工件: {currentArtboard?.artifact} | 渲染: {currentArtboard?.webUrl}
           </Text>
           <ScrollView>
-            <View style={styles.cardWrapper}>
-              {currentArtboard?.boards.map((b) => {
-                const isSel = selectedBoardId === b.id;
-                return (
-                  <Pressable
-                    key={b.id}
-                    onPress={() => setSelectedBoardId(b.id)}
-                    style={[styles.elementCard, isSel && styles.elementCardSelected]}
-                  >
-                    <View>
-                      <Text style={styles.cardName}>{b.name}</Text>
-                      <Text style={styles.cardFile}>渲染文件: {b.file}</Text>
-                    </View>
-                    <Text style={styles.cardDim}>
-                      {b.width} × {b.height} px
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+            {currentArtboard?.boards.length === 0 ? (
+              <View style={{ padding: 20, alignItems: "center" as const }}>
+                <Text style={{ color: theme.colors.foregroundMuted, fontSize: 13, marginBottom: 12 }}>
+                  当前画板暂无 boards 方案卡片。
+                </Text>
+                <Pressable style={styles.btnSingleton} onPress={handleInitSingleton}>
+                  <Text style={{ color: theme.colors.accent, fontSize: 12, fontWeight: "bold" }}>
+                    点此初始化标准原型画板
+                  </Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View style={styles.cardWrapper}>
+                {currentArtboard?.boards.map((b) => {
+                  const isSel = selectedBoardId === b.id;
+                  return (
+                    <Pressable
+                      key={b.id}
+                      onPress={() => setSelectedBoardId(b.id)}
+                      style={[styles.elementCard, isSel && styles.elementCardSelected]}
+                    >
+                      <View>
+                        <Text style={styles.cardName}>{b.name}</Text>
+                        <Text style={styles.cardFile}>文件: {b.file}</Text>
+                      </View>
+                      <Text style={styles.cardDim}>
+                        {b.width} × {b.height} px
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
           </ScrollView>
         </View>
 
         {/* 方案审查栏 */}
         <View style={styles.sidebarArea}>
-          <Text style={styles.title}>
+          <Text style={styles.headerTitle}>
             方案审阅 · {activeBoard ? activeBoard.name : "请在画板点选"}
           </Text>
           {activeBoard ? (
             <View style={{ marginTop: 10 }}>
               <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12, marginBottom: 6 }}>
-                方案标识: #{activeBoard.id} | 规格: {activeBoard.width}x{activeBoard.height}
+                标识: #{activeBoard.id} | 规格: {activeBoard.width}x{activeBoard.height}
               </Text>
               <TextInput
                 style={styles.input}
-                placeholder="填写对该设计方案的修改或确认建议..."
+                placeholder="填写方案的确认或修改建议..."
                 placeholderTextColor={theme.colors.foregroundMuted}
                 multiline
                 value={feedbackText}
@@ -290,7 +357,7 @@ export function ArtboardPanel({ theme, layout }: PluginWorkspacePanelProps) {
             </View>
           ) : (
             <Text style={{ color: theme.colors.foregroundMuted, fontSize: 13, marginTop: 12 }}>
-              在左侧点选任意设计方案，即可执行 Pass / Reject 或直送 Agent。
+              在左侧点选任意设计方案，即可执行 Pass / Reject 或向 Agent 发送修改建议。
             </Text>
           )}
 

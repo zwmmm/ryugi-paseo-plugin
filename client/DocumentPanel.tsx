@@ -1,27 +1,38 @@
 import React, { useState, useMemo } from "react";
 import { View, Text, ScrollView, Pressable, TextInput } from "react-native";
-import type { PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
+import type { PluginAgentPanelProps } from "@getpaseo/plugin/client";
 import { usePaseo, useRpc } from "@getpaseo/plugin/client";
-import { getRealDataRpc, addRealCommentRpc } from "../shared/contracts.js";
+import { getRealDataRpc, addRealCommentRpc, initSessionSingletonRpc } from "../shared/contracts.js";
 
-export function DocumentPanel({ theme, layout }: PluginWorkspacePanelProps) {
+export function DocumentPanel({ theme, layout, agentId }: PluginAgentPanelProps) {
   const paseo = usePaseo();
   const getRealData = useRpc(getRealDataRpc);
   const addRealComment = useRpc(addRealCommentRpc);
+  const initSingleton = useRpc(initSessionSingletonRpc);
 
   const [data, setData] = useState<Awaited<ReturnType<typeof getRealData>> | null>(null);
-  const [selectedBlockId, setSelectedBlockId] = useState<string>("intro");
+  const [selectedDocArtifact, setSelectedDocArtifact] = useState<string | undefined>();
+  const [selectedBlockId, setSelectedBlockId] = useState<string>("");
   const [newCommentText, setNewCommentText] = useState("");
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
-  const loadData = React.useCallback(async () => {
+  const loadData = React.useCallback(async (docArt?: string) => {
     try {
-      const res = await getRealData({});
+      const res = await getRealData({
+        agentId,
+        docArtifact: docArt || selectedDocArtifact,
+      });
       setData(res);
+      if (!selectedDocArtifact) {
+        setSelectedDocArtifact(res.currentDoc.artifact);
+      }
+      if (res.currentDoc.blocks.length > 0 && !selectedBlockId) {
+        setSelectedBlockId(res.currentDoc.blocks[0].id);
+      }
     } catch (e: any) {
       setStatusMsg("加载失败: " + e.message);
     }
-  }, [getRealData]);
+  }, [getRealData, agentId, selectedDocArtifact, selectedBlockId]);
 
   React.useEffect(() => {
     loadData();
@@ -43,6 +54,51 @@ export function DocumentPanel({ theme, layout }: PluginWorkspacePanelProps) {
         flex: 1,
         backgroundColor: theme.colors.surface0,
         padding: layout.compact ? 12 : 18,
+      },
+      topBar: {
+        flexDirection: "row" as const,
+        alignItems: "center" as const,
+        justifyContent: "space-between" as const,
+        marginBottom: 12,
+        flexWrap: "wrap" as const,
+        gap: 8,
+      },
+      selectorRow: {
+        flexDirection: "row" as const,
+        alignItems: "center" as const,
+        gap: 6,
+        flexWrap: "wrap" as const,
+      },
+      chip: {
+        paddingVertical: 4,
+        paddingHorizontal: 10,
+        borderRadius: 14,
+        backgroundColor: theme.colors.surface1,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+      },
+      chipActive: {
+        backgroundColor: theme.colors.accent,
+        borderColor: theme.colors.accent,
+      },
+      chipText: {
+        fontSize: 11,
+        color: theme.colors.foreground,
+      },
+      chipTextActive: {
+        color: theme.colors.accentForeground,
+        fontWeight: "bold" as const,
+      },
+      btnSingleton: {
+        backgroundColor: theme.colors.surface2,
+        paddingVertical: 5,
+        paddingHorizontal: 10,
+        borderRadius: 6,
+        borderWidth: 1,
+        borderColor: theme.colors.accent,
+      },
+      contentRow: {
+        flex: 1,
         flexDirection: (layout.compact ? "column" : "row") as "column" | "row",
         gap: 16,
       },
@@ -64,7 +120,7 @@ export function DocumentPanel({ theme, layout }: PluginWorkspacePanelProps) {
         padding: 14,
       },
       headerTitle: {
-        fontSize: layout.compact ? 16 : 18,
+        fontSize: layout.compact ? 15 : 17,
         fontWeight: "bold" as const,
         color: theme.colors.foreground,
         marginBottom: 4,
@@ -72,7 +128,7 @@ export function DocumentPanel({ theme, layout }: PluginWorkspacePanelProps) {
       metaText: {
         fontSize: 12,
         color: theme.colors.foregroundMuted,
-        marginBottom: 12,
+        marginBottom: 10,
       },
       blockItem: {
         padding: 10,
@@ -92,9 +148,9 @@ export function DocumentPanel({ theme, layout }: PluginWorkspacePanelProps) {
         marginBottom: 2,
       },
       blockText: {
-        fontSize: 14,
+        fontSize: 13,
         color: theme.colors.foreground,
-        lineHeight: 20,
+        lineHeight: 18,
       },
       commentItem: {
         backgroundColor: theme.colors.surface0,
@@ -161,9 +217,17 @@ export function DocumentPanel({ theme, layout }: PluginWorkspacePanelProps) {
     [theme, layout.compact]
   );
 
+  const handleInitSingleton = async () => {
+    setStatusMsg("正在为此会话锁定唯一的专属 PRD 文档...");
+    const res = await initSingleton({ agentId });
+    setSelectedDocArtifact(res.docArtifact);
+    await loadData(res.docArtifact);
+    setStatusMsg(`✓ 已锁定会话单例: ${res.docArtifact}`);
+  };
+
   const handleAddComment = async () => {
     if (!newCommentText.trim() || !doc || !selectedBlock) return;
-    setStatusMsg("正在向 Ryugi 核心引擎写入批注...");
+    setStatusMsg("正在向 Ryugi 写入批注...");
     const res = await addRealComment({
       artifact: doc.artifact,
       blockId: selectedBlock.id,
@@ -172,25 +236,19 @@ export function DocumentPanel({ theme, layout }: PluginWorkspacePanelProps) {
 
     if (res.success) {
       setNewCommentText("");
-      setStatusMsg("✓ 真实批注已存入 .ryugi/ 存储！可在 Agent 对话框通过 @ 实时引用");
+      setStatusMsg("✓ 批注已保存！可在 Agent 输入框通过 @ 实时引用");
       await loadData();
     } else {
-      setStatusMsg("批注写入失败: " + res.error);
+      setStatusMsg("写入失败: " + res.error);
     }
   };
 
   const handleSendDirectToAgent = async () => {
     if (!doc || !selectedBlock) return;
     try {
-      const agents = await paseo.agents.list();
-      const firstEntry = agents.entries[0];
-      if (firstEntry?.agent?.id) {
-        const textPayload = `【Ryugi 批注指引】\n针对工件 [${doc.artifact}] 锚点块 #${selectedBlock.id}：\n> "${selectedBlock.text}"\n\n评审修改意见：${newCommentText.trim() || "请根据规范修改此处的实现"}`;
-        await paseo.agents.ref(firstEntry.agent.id).send(textPayload);
-        setStatusMsg(`已直接推送到 Agent [${firstEntry.agent.id.slice(-6)}] 对话！`);
-      } else {
-        setStatusMsg("当前无活跃 Agent，可通过输入框附件(@)进行引用");
-      }
+      const textPayload = `【Ryugi 批注指引】\n针对工件 [${doc.artifact}] 锚点 #${selectedBlock.id}：\n> "${selectedBlock.text}"\n\n修改意见：${newCommentText.trim() || "请根据规范修改此处的实现"}`;
+      await paseo.agents.ref(agentId).send(textPayload);
+      setStatusMsg(`已直接推送到当前 Agent 对话！`);
     } catch (e: any) {
       setStatusMsg("发送提示: " + e.message);
     }
@@ -198,72 +256,110 @@ export function DocumentPanel({ theme, layout }: PluginWorkspacePanelProps) {
 
   return (
     <View style={styles.container}>
-      {/* 左侧：文档内容展示 */}
-      <View style={styles.docCol}>
-        <Text style={styles.headerTitle}>{doc?.artifact ?? "加载 Ryugi 真实文档中..."}</Text>
-        <Text style={styles.metaText}>
-          本地服务: {data?.serverUrl || "连接中..."} (点击段落高亮，查看已有批注)
-        </Text>
-        <ScrollView style={{ flex: 1 }}>
-          {doc?.blocks.map((b) => {
-            const isSelected = b.id === selectedBlockId;
+      {/* 顶部工具栏：选择已有工件或切换到单例工件 */}
+      <View style={styles.topBar}>
+        <View style={styles.selectorRow}>
+          <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>文档工件:</Text>
+          {data?.availableDocs.map((art) => {
+            const isSel = (selectedDocArtifact || doc?.artifact) === art;
             return (
               <Pressable
-                key={b.id}
-                onPress={() => setSelectedBlockId(b.id)}
-                style={[styles.blockItem, isSelected && styles.blockSelected]}
+                key={art}
+                onPress={() => {
+                  setSelectedDocArtifact(art);
+                  loadData(art);
+                }}
+                style={[styles.chip, isSel && styles.chipActive]}
               >
-                <Text style={styles.blockLine}>#{b.id} · &lt;{b.tag}&gt;</Text>
-                <Text style={styles.blockText}>{b.text}</Text>
+                <Text style={isSel ? styles.chipTextActive : styles.chipText}>
+                  {art.replace("document/", "")}
+                </Text>
               </Pressable>
             );
           })}
-        </ScrollView>
-      </View>
-
-      {/* 右侧：针对所选段落的批注栏 */}
-      <View style={styles.commentCol}>
-        <Text style={styles.headerTitle}>
-          真实批注互动 · #{selectedBlock ? selectedBlock.id : "未选择"}
-        </Text>
-        <Text style={styles.metaText}>
-          {blockComments.length} 条关于该段落的真实评论记录
-        </Text>
-
-        <ScrollView style={{ flex: 1, marginBottom: 12 }}>
-          {blockComments.length === 0 ? (
-            <Text style={{ color: theme.colors.foregroundMuted, fontSize: 13, padding: 8 }}>
-              该锚点暂无批注。在下方输入建议，将直接调用 ryugi comment 写入本地仓库。
-            </Text>
-          ) : (
-            blockComments.map((c) => (
-              <View key={c.id} style={styles.commentItem}>
-                <Text style={styles.commentAuthor}>👤 {c.author}</Text>
-                <Text style={styles.commentText}>{c.text}</Text>
-              </View>
-            ))
-          )}
-        </ScrollView>
-
-        <TextInput
-          style={styles.input}
-          placeholder="针对选中文档输入修改建议或评论..."
-          placeholderTextColor={theme.colors.foregroundMuted}
-          multiline
-          value={newCommentText}
-          onChangeText={setNewCommentText}
-        />
-
-        <View style={styles.btnRow}>
-          <Pressable style={styles.btnPrimary} onPress={handleAddComment}>
-            <Text style={styles.btnText}>保存至 Ryugi</Text>
-          </Pressable>
-          <Pressable style={styles.btnSecondary} onPress={handleSendDirectToAgent}>
-            <Text style={styles.btnText}>直送 Agent</Text>
-          </Pressable>
         </View>
 
-        {statusMsg && <Text style={styles.statusText}>{statusMsg}</Text>}
+        <Pressable style={styles.btnSingleton} onPress={handleInitSingleton}>
+          <Text style={{ color: theme.colors.accent, fontSize: 11, fontWeight: "bold" }}>
+            + 锁定会话专属单例
+          </Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.contentRow}>
+        {/* 左侧：文档内容展示 */}
+        <View style={styles.docCol}>
+          <Text style={styles.headerTitle}>{doc?.artifact ?? "加载中..."}</Text>
+          <Text style={styles.metaText}>
+            项目目录: {data?.projectDir}
+          </Text>
+          <ScrollView style={{ flex: 1 }}>
+            {doc?.blocks.length === 0 ? (
+              <Text style={{ color: theme.colors.foregroundMuted, fontSize: 13, padding: 12 }}>
+                该文档暂无解析出的段落区块，点击上方“+ 锁定会话专属单例”快速生成标准模版。
+              </Text>
+            ) : (
+              doc?.blocks.map((b) => {
+                const isSelected = b.id === selectedBlockId;
+                return (
+                  <Pressable
+                    key={b.id}
+                    onPress={() => setSelectedBlockId(b.id)}
+                    style={[styles.blockItem, isSelected && styles.blockSelected]}
+                  >
+                    <Text style={styles.blockLine}>#{b.id} · &lt;{b.tag}&gt;</Text>
+                    <Text style={styles.blockText}>{b.text}</Text>
+                  </Pressable>
+                );
+              })
+            )}
+          </ScrollView>
+        </View>
+
+        {/* 右侧：批注栏 */}
+        <View style={styles.commentCol}>
+          <Text style={styles.headerTitle}>
+            批注反馈 · #{selectedBlock ? selectedBlock.id : "请选择段落"}
+          </Text>
+          <Text style={styles.metaText}>
+            {blockComments.length} 条关于该段落的批注
+          </Text>
+
+          <ScrollView style={{ flex: 1, marginBottom: 12 }}>
+            {blockComments.length === 0 ? (
+              <Text style={{ color: theme.colors.foregroundMuted, fontSize: 13, padding: 8 }}>
+                该段落暂无批注。在下方输入修改意见并保存。
+              </Text>
+            ) : (
+              blockComments.map((c) => (
+                <View key={c.id} style={styles.commentItem}>
+                  <Text style={styles.commentAuthor}>👤 {c.author}</Text>
+                  <Text style={styles.commentText}>{c.text}</Text>
+                </View>
+              ))
+            )}
+          </ScrollView>
+
+          <TextInput
+            style={styles.input}
+            placeholder="填写修改建议或提问..."
+            placeholderTextColor={theme.colors.foregroundMuted}
+            multiline
+            value={newCommentText}
+            onChangeText={setNewCommentText}
+          />
+
+          <View style={styles.btnRow}>
+            <Pressable style={styles.btnPrimary} onPress={handleAddComment}>
+              <Text style={styles.btnText}>保存至 Ryugi</Text>
+            </Pressable>
+            <Pressable style={styles.btnSecondary} onPress={handleSendDirectToAgent}>
+              <Text style={styles.btnText}>直送 Agent</Text>
+            </Pressable>
+          </View>
+
+          {statusMsg && <Text style={styles.statusText}>{statusMsg}</Text>}
+        </View>
       </View>
     </View>
   );
