@@ -37,13 +37,17 @@ export async function subscribeMonitor(serverHome: string, subscription: Subscri
   url.pathname = "/api/agent/subscribe";
   url.search = "";
   url.searchParams.set("key", key);
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Ryugi-Project": encodeURIComponent(subscription.project) },
-    body: JSON.stringify(subscription),
-    signal: AbortSignal.timeout(5000),
-  });
-  if (!response.ok) throw new Error(`Ryugi subscription failed: ${response.status}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Ryugi-Project": encodeURIComponent(subscription.project) },
+      body: JSON.stringify(subscription),
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`Ryugi subscription failed: ${response.status}`);
+  } finally { clearTimeout(timeout); }
 }
 
 export function startMonitorChannel(options: Options) {

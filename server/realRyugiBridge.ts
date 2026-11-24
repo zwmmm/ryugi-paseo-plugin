@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
+import { URL } from "node:url";
 
 import { getPrivateRuntime } from "./privateRuntime.js";
 

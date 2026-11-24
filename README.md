@@ -1,6 +1,6 @@
 # Ryugi Monitor
 
-插件为 Paseo 会话提供隔离的 Ryugi 工件 CLI 和完整 workflow skills。Agent 创建工件后，评论、方案选择、问答提交及撤回通过本机 socket 通知对应 Agent 继续处理。传输确认不代表反馈已经处理。
+插件为 Paseo 会话提供隔离的 Ryugi 工件 CLI 和完整 workflow skills。Agent 创建工件后，评论、方案选择、问答提交及撤回通过本机 socket 通知对应 Agent 继续处理。传输确认不代表反馈已经处理。时间线中的 monitor 通知默认折叠为摘要，点击可展开原始内容；Agent 仍收到完整通知。
 
 输入框上方仅在当前会话存在对应工件时显示文档、画板入口，点击直接打开工件地址。附件菜单可手动搜索“Ryugi 评论”。Agent 不自动打开或操作浏览器，不需要各 Agent 的 Ryugi hook 或 Paseo Hub Triggers。
 

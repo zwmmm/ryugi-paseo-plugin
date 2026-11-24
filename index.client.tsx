@@ -1,7 +1,17 @@
 import { openExternalUrl, type PluginButtonRegistration, type PluginClientContext } from "@getpaseo/plugin/client";
+import { MonitorNotice, monitorNoticeSchema, parseMonitorNotice } from "./client/MonitorNotice.js";
 import { ryugiAttachments, sessionDataRpc, workspaceChanges } from "./shared/contracts.js";
 
 export default function contribute(client: PluginClientContext) {
+  const removeTransformer = client.addTimelineTransformer({
+    id: "ryugi-monitor-notice",
+    query: { itemType: "user_message" },
+    transform({ item }) {
+      const data = parseMonitorNotice(item.text);
+      if (data) return { items: [{ type: "plugin", kind: "ryugi-monitor-notice", version: 1, data }] };
+    },
+  });
+  const removeRenderer = client.addTimelineRenderer({ kind: "ryugi-monitor-notice", version: 1, schema: monitorNoticeSchema, Component: MonitorNotice });
   const removeSource = client.addAttachmentSource(ryugiAttachments);
   const lifetime = new AbortController();
   const agents = new Map<string, { workspaceId: string; checking: boolean; pending: boolean; doc?: PluginButtonRegistration; art?: PluginButtonRegistration; docUrl?: string; artUrl?: string; stopWatch?: () => void }>();
@@ -49,5 +59,5 @@ export default function contribute(client: PluginClientContext) {
     });
   }).catch((error) => { if (!lifetime.signal.aborted) console.error("[Ryugi] 会话订阅失败", error); });
   const timer = setInterval(() => { for (const id of agents.keys()) void check(id); }, 60000);
-  return () => { lifetime.abort(); clearInterval(timer); for (const id of agents.keys()) remove(id); removeSource(); };
+  return () => { lifetime.abort(); clearInterval(timer); for (const id of agents.keys()) remove(id); removeSource(); removeTransformer(); removeRenderer(); };
 }
