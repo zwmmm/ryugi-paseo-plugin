@@ -1,0 +1,8 @@
+{
+  "id": "ryugi-paseo",
+  "name": "Ryugi Artifacts & Workbench",
+  "description": "Interactive Document and Artboard Artifacts with native Agent Composer Integration",
+  "requirements": {
+    "paseo": ">=0.9.0"
+  }
+}
