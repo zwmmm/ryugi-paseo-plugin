@@ -4,5 +4,8 @@
   "description": "Interactive Document and Artboard Artifacts with native Agent Composer Integration",
   "requirements": {
     "paseo": ">=0.9.0"
-  }
+  },
+  "build": [
+    ["npm", "install", "--no-fund", "--no-audit"]
+  ]
 }
