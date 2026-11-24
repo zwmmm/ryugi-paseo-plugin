@@ -19,6 +19,7 @@ export function ArtboardPanel({ theme, layout, agentId, workspaceId, navigation 
       try {
         const res = await getRealData({
           agentId,
+          workspaceId,
           artboardArtifact: artArt || selectedArtArtifact,
         });
         setData(res);
@@ -29,7 +30,7 @@ export function ArtboardPanel({ theme, layout, agentId, workspaceId, navigation 
         setStatusMsg("加载画板失败: " + e.message);
       }
     },
-    [getRealData, agentId, selectedArtArtifact]
+    [getRealData, agentId, workspaceId, selectedArtArtifact]
   );
 
   useEffect(() => {
@@ -37,16 +38,22 @@ export function ArtboardPanel({ theme, layout, agentId, workspaceId, navigation 
   }, [refresh]);
 
   const currentArtboard = data?.currentArtboard;
-  const webUrl =
+  const embedUrl =
+    currentArtboard?.embedUrl ||
+    currentArtboard?.webUrl ||
+    (data?.embedServerUrl
+      ? `${data.embedServerUrl}/${selectedArtArtifact || "artboard/layout-demo"}`
+      : "");
+  const externalWebUrl =
     currentArtboard?.webUrl ||
     (data?.serverUrl
-      ? `${data.serverUrl}/${selectedArtArtifact || "artboard/prototype-demo"}`
+      ? `${data.serverUrl}/${selectedArtArtifact || "artboard/layout-demo"}`
       : "");
 
   const handleInitSingleton = async () => {
     try {
       setStatusMsg("正在为此会话锁定唯一的专属原型画板...");
-      const res = await initSingleton({ agentId });
+      const res = await initSingleton({ agentId, workspaceId });
       setSelectedArtArtifact(res.artboardArtifact);
       await refresh(res.artboardArtifact);
       setStatusMsg(`✓ 已锁定单例画板: ${res.artboardArtifact}`);
@@ -56,11 +63,12 @@ export function ArtboardPanel({ theme, layout, agentId, workspaceId, navigation 
   };
 
   const handleOpenBrowser = () => {
-    if (!webUrl) return;
+    const url = externalWebUrl || embedUrl;
+    if (!url) return;
     if (navigation?.openBrowser) {
-      navigation.openBrowser({ url: webUrl, workspaceId });
+      navigation.openBrowser({ url, workspaceId });
     } else {
-      openExternalBrowser(webUrl);
+      openExternalBrowser(url);
     }
   };
 
@@ -77,7 +85,7 @@ export function ArtboardPanel({ theme, layout, agentId, workspaceId, navigation 
               .join("\n")
           : "- 当前画板已就绪，正在呈现主交互视图";
 
-      const payload = `【Ryugi 原型画板审阅同步】\n目标工件: [${currentArtboard.artifact}]\n画板地址: ${webUrl}\n包含的设计方案卡片:\n${boardSummary}\n\n请确认当前视觉与交互布局，并开始后续组件代码实现。`;
+      const payload = `【Ryugi 原型画板审阅同步】\n目标工件: [${currentArtboard.artifact}]\n画板地址: ${externalWebUrl || embedUrl}\n包含的设计方案卡片:\n${boardSummary}\n\n请确认当前视觉与交互布局，并开始后续组件代码实现。`;
       await paseo.agents.ref(agentId).send(payload);
       setStatusMsg("✓ 已将画板方案信息推送到当前 Agent 对话！");
     } catch (e: any) {
@@ -245,11 +253,11 @@ export function ArtboardPanel({ theme, layout, agentId, workspaceId, navigation 
         </View>
       )}
 
-      {/* 核心展示区：直接原生展示 Ryugi Artboard 画布 Web 页面 */}
+      {/* 核心展示区：通过无 CSP 代理原生呈现真实 Ryugi Artboard 画布 Web 页面 */}
       <View style={styles.frameContainer}>
-        {webUrl ? (
+        {embedUrl ? (
           <WebFrameView
-            url={webUrl}
+            url={embedUrl}
             title={`Ryugi Artboard: ${currentArtboard?.artifact || "Artboard"}`}
             onMessage={(msg) => {
               if (msg?.type === "round_submitted" || msg?.type === "comment_added") {
@@ -260,7 +268,7 @@ export function ArtboardPanel({ theme, layout, agentId, workspaceId, navigation 
         ) : (
           <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
             <Text style={{ color: theme.colors.foregroundMuted, fontSize: 13 }}>
-              正在启动 Ryugi 画板服务...
+              正在加载 Ryugi 画板服务...
             </Text>
           </View>
         )}

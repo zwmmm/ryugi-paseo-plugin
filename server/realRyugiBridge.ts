@@ -2,6 +2,8 @@ import { execFile, execSync } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
 import fs from "node:fs";
+import os from "node:os";
+import http from "node:http";
 
 const execFileAsync = promisify(execFile);
 
@@ -30,7 +32,8 @@ export interface RealCommentItem {
  * 探测可用的 ryugi CLI 路径：
  * 1. 优先使用环境变量 RYUGI_CLI_PATH
  * 2. 检查系统 PATH 中的 ryugi
- * 3. 兜底回退至本地已知的 ryugi.cjs 相对路径
+ * 3. 检查全局 cache release 中的 cli.cjs
+ * 4. 检查当前工作区本地源码的 ryugi.cjs
  */
 function resolveRyugiCli(): string {
   if (process.env.RYUGI_CLI_PATH && fs.existsSync(process.env.RYUGI_CLI_PATH)) {
@@ -42,26 +45,44 @@ function resolveRyugiCli(): string {
       return whichRes;
     }
   } catch {}
-  
-  // 兜底：尝试从 cwd 或向上查找
-  const fallbackPaths = [
+
+  const candidates = [
+    path.join(os.homedir(), ".cache/ryugi/artifacts/1.105.3/node_modules/ryugi-artifacts/dist/cli.cjs"),
+    "/Users/wayne/.lody/chats/0cf6159c-f2a4-4e62-b672-a4817b5b8fde/ryugi-repo/skills/artifacts/app/ryugi.cjs",
     path.resolve(process.cwd(), "ryugi-repo/skills/artifacts/app/ryugi.cjs"),
     path.resolve(process.cwd(), "../ryugi-repo/skills/artifacts/app/ryugi.cjs"),
   ];
-  for (const p of fallbackPaths) {
-    if (fs.existsSync(p)) return p;
+
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c;
   }
+
   return "ryugi";
 }
 
 /**
  * 探测默认项目目录：
- * 优先使用 RYUGI_PROJECT_DIR，次之使用 process.cwd()
+ * 1. 优先使用 RYUGI_PROJECT_DIR
+ * 2. 检查已知本地 ryugi-repo 工作区
+ * 3. 检查当前 cwd 下的 ryugi-repo 或 .ryugi
  */
 function resolveDefaultProjectDir(): string {
   if (process.env.RYUGI_PROJECT_DIR && fs.existsSync(process.env.RYUGI_PROJECT_DIR)) {
     return process.env.RYUGI_PROJECT_DIR;
   }
+
+  const knownWorkspace = "/Users/wayne/.lody/chats/0cf6159c-f2a4-4e62-b672-a4817b5b8fde/ryugi-repo";
+  if (fs.existsSync(knownWorkspace)) {
+    return knownWorkspace;
+  }
+
+  const cwdRepo = path.resolve(process.cwd(), "ryugi-repo");
+  if (fs.existsSync(cwdRepo)) return cwdRepo;
+
+  if (fs.existsSync(path.resolve(process.cwd(), ".ryugi"))) {
+    return process.cwd();
+  }
+
   return process.cwd();
 }
 
@@ -69,6 +90,8 @@ export class RealRyugiBridge {
   private customCliPath: string | null = null;
   private customProjectDir: string | null = null;
   private serverUrl: string | null = null;
+  private embedProxyServer: http.Server | null = null;
+  private embedProxyPort: number = 27325;
 
   constructor(cliPath?: string, projectDir?: string) {
     if (cliPath) this.customCliPath = cliPath;
@@ -80,12 +103,108 @@ export class RealRyugiBridge {
   }
 
   public getProjectDir(override?: string): string {
-    if (override && fs.existsSync(override)) return override;
+    if (override && fs.existsSync(override)) {
+      if (fs.existsSync(path.join(override, "ryugi-repo"))) {
+        return path.join(override, "ryugi-repo");
+      }
+      return override;
+    }
     return this.customProjectDir || resolveDefaultProjectDir();
   }
 
   public setProjectDir(dir: string) {
     this.customProjectDir = dir;
+  }
+
+  /**
+   * 启动内置的无 CSP 代理服务（端口 27325）：
+   * 专用于在 Paseo 面板中无障碍嵌入真实的 Ryugi Web UI，
+   * 移除阻止 iframe 加载的 frame-ancestors 与 CSP 头，并代理 WebSocket。
+   */
+  async ensureEmbedProxy(): Promise<string> {
+    if (this.embedProxyServer) {
+      return `http://localhost:${this.embedProxyPort}`;
+    }
+
+    return new Promise((resolve) => {
+      const server = http.createServer((req, res) => {
+        const upstreamPort = 27319;
+        const options: http.RequestOptions = {
+          hostname: "localhost",
+          port: upstreamPort,
+          path: req.url,
+          method: req.method,
+          headers: { ...req.headers, host: `localhost:${upstreamPort}` },
+        };
+
+        const proxyReq = http.request(options, (proxyRes) => {
+          const headers = { ...proxyRes.headers };
+          // 剥除阻止 iframe 嵌入的安全限制头
+          delete headers["content-security-policy"];
+          delete headers["content-security-policy-report-only"];
+          delete headers["x-frame-options"];
+          headers["access-control-allow-origin"] = "*";
+          headers["access-control-allow-headers"] = "*";
+
+          res.writeHead(proxyRes.statusCode || 200, headers);
+          proxyRes.pipe(res, { end: true });
+        });
+
+        proxyReq.on("error", (err) => {
+          res.writeHead(502, { "Content-Type": "text/plain" });
+          res.end("Ryugi embed proxy error: " + err.message);
+        });
+
+        req.pipe(proxyReq, { end: true });
+      });
+
+      // 代理 WebSocket 升级请求以保证实时协同与批注连接
+      server.on("upgrade", (req, socket, head) => {
+        const upstreamPort = 27319;
+        const proxyReq = http.request({
+          hostname: "localhost",
+          port: upstreamPort,
+          path: req.url,
+          method: req.method,
+          headers: { ...req.headers, host: `localhost:${upstreamPort}` },
+        });
+
+        proxyReq.on("upgrade", (proxyRes, proxySocket, proxyHead) => {
+          socket.write(
+            "HTTP/1.1 101 Switching Protocols\r\n" +
+              Object.entries(proxyRes.headers)
+                .map(([k, v]) => `${k}: ${v}`)
+                .join("\r\n") +
+              "\r\n\r\n"
+          );
+          if (proxyHead && proxyHead.length) {
+            socket.unshift(proxyHead);
+          }
+          proxySocket.pipe(socket);
+          socket.pipe(proxySocket);
+        });
+
+        proxyReq.on("error", () => {
+          socket.destroy();
+        });
+
+        proxyReq.end();
+      });
+
+      server.listen(this.embedProxyPort, () => {
+        this.embedProxyServer = server;
+        resolve(`http://localhost:${this.embedProxyPort}`);
+      });
+
+      server.on("error", (err: any) => {
+        if (err.code === "EADDRINUSE") {
+          this.embedProxyPort += 1;
+          server.listen(this.embedProxyPort);
+        } else {
+          resolve("http://localhost:27319");
+        }
+      });
+    });
   }
 
   /**
@@ -95,7 +214,7 @@ export class RealRyugiBridge {
     if (this.serverUrl) return this.serverUrl;
     const pDir = this.getProjectDir(projectDir);
     const cli = this.getCliPath();
-    const art = artifact || "document/master-prd";
+    const art = artifact || "document/comment-demo";
 
     try {
       const args = [
@@ -109,7 +228,6 @@ export class RealRyugiBridge {
         "--json",
       ];
 
-      // 如果 cli 是 .js/.cjs 脚本则用 node 启动，否则直接运行二进制
       let stdout: string;
       if (cli.endsWith(".cjs") || cli.endsWith(".js")) {
         const res = await execFileAsync("node", [cli, ...args]);
@@ -272,30 +390,34 @@ export class RealRyugiBridge {
     const shortId = agentId.slice(-8);
     const docArtifact = `document/session-${shortId}`;
     const artboardArtifact = `artboard/session-${shortId}`;
+    const docTitle = title || `需求会话 ${shortId} 专属 PRD`;
 
     const docDir = path.join(pDir, ".ryugi/artifacts", docArtifact);
-    const artDir = path.join(pDir, ".ryugi/artifacts", artboardArtifact, "boards");
+    const artDir = path.join(pDir, ".ryugi/artifacts", artboardArtifact);
 
     let created = false;
 
-    // 1. 初始化会话专属 Document
-    if (!fs.existsSync(path.join(docDir, "doc.xml"))) {
+    // 1. 初始化会话专属文档单例
+    if (!fs.existsSync(docDir)) {
       fs.mkdirSync(docDir, { recursive: true });
-      const docXml = `<doc>
-  <h1 id="title">${title || `Requirement PRD - Session ${shortId}`}</h1>
-  <p id="overview">Single source of truth for this session. All modifications will update in place.</p>
-  <h2 id="sec-1">1. Functional Specifications</h2>
-  <p id="p-1">Define requirements and architecture components here.</p>
-</doc>
+      const docXml = `<?xml version="1.0" encoding="UTF-8"?>
+<article id="art-${shortId}">
+  <h1 id="title-${shortId}">${docTitle}</h1>
+  <p id="desc-${shortId}">本篇 PRD 与画板是当前需求会话专属的唯一工件。所有后续开发与原型迭代均在此处原位更新。</p>
+  <h2 id="scope-${shortId}">需求范围与规格</h2>
+  <p id="scope-content-${shortId}">请在下方的画板与段落中补充具体业务规则与边界约束。</p>
+</article>
 `;
       fs.writeFileSync(path.join(docDir, "doc.xml"), docXml);
+      fs.writeFileSync(path.join(docDir, "comments.json"), JSON.stringify({ version: "1.0", threads: [] }, null, 2));
       created = true;
     }
 
-    // 2. 初始化会话专属 Artboard
-    if (!fs.existsSync(path.join(pDir, ".ryugi/artifacts", artboardArtifact, "canvas.json"))) {
-      fs.mkdirSync(artDir, { recursive: true });
+    // 2. 初始化会话专属画板单例
+    if (!fs.existsSync(artDir)) {
+      fs.mkdirSync(path.join(artDir, "boards"), { recursive: true });
       const canvasJson = {
+        version: "1.0",
         boards: {
           "primary-layout": {
             name: "Primary Prototype Variant",

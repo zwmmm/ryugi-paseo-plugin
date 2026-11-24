@@ -19,6 +19,7 @@ export function DocumentPanel({ theme, layout, agentId, workspaceId, navigation 
       try {
         const res = await getRealData({
           agentId,
+          workspaceId,
           docArtifact: docArt || selectedDocArtifact,
         });
         setData(res);
@@ -29,7 +30,7 @@ export function DocumentPanel({ theme, layout, agentId, workspaceId, navigation 
         setStatusMsg("加载失败: " + e.message);
       }
     },
-    [getRealData, agentId, selectedDocArtifact]
+    [getRealData, agentId, workspaceId, selectedDocArtifact]
   );
 
   useEffect(() => {
@@ -37,12 +38,13 @@ export function DocumentPanel({ theme, layout, agentId, workspaceId, navigation 
   }, [loadData]);
 
   const doc = data?.currentDoc;
-  const webUrl = doc?.webUrl || (data?.serverUrl ? `${data.serverUrl}/${selectedDocArtifact || "document/master-prd"}` : "");
+  const embedUrl = doc?.embedUrl || doc?.webUrl || (data?.embedServerUrl ? `${data.embedServerUrl}/${selectedDocArtifact || "document/comment-demo"}` : "");
+  const externalWebUrl = doc?.webUrl || (data?.serverUrl ? `${data.serverUrl}/${selectedDocArtifact || "document/comment-demo"}` : "");
 
   const handleInitSingleton = async () => {
     try {
       setStatusMsg("正在锁定会话专属 PRD 单例...");
-      const res = await initSingleton({ agentId });
+      const res = await initSingleton({ agentId, workspaceId });
       setSelectedDocArtifact(res.docArtifact);
       await loadData(res.docArtifact);
       setStatusMsg(`✓ 已锁定单例: ${res.docArtifact}`);
@@ -52,11 +54,12 @@ export function DocumentPanel({ theme, layout, agentId, workspaceId, navigation 
   };
 
   const handleOpenBrowser = () => {
-    if (!webUrl) return;
+    const url = externalWebUrl || embedUrl;
+    if (!url) return;
     if (navigation?.openBrowser) {
-      navigation.openBrowser({ url: webUrl, workspaceId });
+      navigation.openBrowser({ url, workspaceId });
     } else {
-      openExternalBrowser(webUrl);
+      openExternalBrowser(url);
     }
   };
 
@@ -237,11 +240,11 @@ export function DocumentPanel({ theme, layout, agentId, workspaceId, navigation 
         </View>
       )}
 
-      {/* 核心展示区：直接原生展示 Ryugi Web 页面 */}
+      {/* 核心展示区：通过无 CSP 代理原生呈现真实 Ryugi Web 页面 */}
       <View style={styles.frameContainer}>
-        {webUrl ? (
+        {embedUrl ? (
           <WebFrameView
-            url={webUrl}
+            url={embedUrl}
             title={`Ryugi PRD: ${doc?.artifact || "Document"}`}
             onMessage={(msg) => {
               if (msg?.type === "comment_added") {
@@ -252,7 +255,7 @@ export function DocumentPanel({ theme, layout, agentId, workspaceId, navigation 
         ) : (
           <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
             <Text style={{ color: theme.colors.foregroundMuted, fontSize: 13 }}>
-              正在启动 Ryugi 文档服务...
+              正在加载 Ryugi 文档服务...
             </Text>
           </View>
         )}
