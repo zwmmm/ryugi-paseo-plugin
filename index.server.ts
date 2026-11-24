@@ -22,9 +22,28 @@ export default function contribute(server: PluginServerContext) {
   // 3. 读取真实工件数据（支持单例或用户自由点选已有工件）
   server.handle(
     getRealDataRpc,
-    async ({ agentId, docArtifact, artboardArtifact, overrideProjectDir }) => {
-      const pDir = realRyugiBridge.getProjectDir(overrideProjectDir);
+    async ({ agentId, workspaceId, docArtifact, artboardArtifact, overrideProjectDir }, { paseo }) => {
+      let resolvedDir = overrideProjectDir;
+      if (!resolvedDir && workspaceId) {
+        try {
+          const ws = await paseo.workspaces.ref(workspaceId).current();
+          if (ws?.workspaceDirectory) {
+            resolvedDir = ws.workspaceDirectory;
+          } else if (ws?.projectRootPath) {
+            resolvedDir = ws.projectRootPath;
+          }
+        } catch {}
+      }
+
+      const pDir = realRyugiBridge.getProjectDir(resolvedDir);
       const serverUrl = await realRyugiBridge.ensureServer(pDir);
+      const embedServerUrl = await realRyugiBridge.ensureEmbedProxy();
+
+      // 如果有 agentId，自动确保当前会话的单例工件已存在
+      if (agentId) {
+        realRyugiBridge.ensureSessionSingleton(agentId, pDir);
+      }
+
       const artifacts = await realRyugiBridge.listArtifacts(pDir);
 
       const availableDocs = artifacts
@@ -35,7 +54,6 @@ export default function contribute(server: PluginServerContext) {
         .filter((a) => a.artifact.startsWith("artboard/"))
         .map((a) => a.artifact);
 
-      // 单例推导：如果传入 agentId 且用户未显式指定别的工件，则优先定位当前会话的单例工件
       let targetDoc = docArtifact;
       let targetArtboard = artboardArtifact;
 
@@ -55,9 +73,9 @@ export default function contribute(server: PluginServerContext) {
             : availableArtboards[0] || sessionArt;
         }
       } else {
-        targetDoc = targetDoc || availableDocs[0] || "document/master-prd";
+        targetDoc = targetDoc || availableDocs[0] || "document/comment-demo";
         targetArtboard =
-          targetArtboard || availableArtboards[0] || "artboard/prototype-demo";
+          targetArtboard || availableArtboards[0] || "artboard/layout-demo";
       }
 
       // 读取当前选中文档
@@ -76,18 +94,21 @@ export default function contribute(server: PluginServerContext) {
 
       return {
         serverUrl,
+        embedServerUrl,
         projectDir: pDir,
         availableDocs,
         availableArtboards,
         currentDoc: {
           artifact: targetDoc,
           webUrl: `${serverUrl}/${targetDoc}`,
+          embedUrl: `${embedServerUrl}/${targetDoc}`,
           blocks,
           comments,
         },
         currentArtboard: {
           artifact: targetArtboard,
           webUrl: `${serverUrl}/${targetArtboard}`,
+          embedUrl: `${embedServerUrl}/${targetArtboard}`,
           boards,
         },
       };

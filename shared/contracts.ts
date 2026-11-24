@@ -32,12 +32,14 @@ export const getRealDataRpc = defineRpc({
   }),
   output: z.object({
     serverUrl: z.string(),
+    embedServerUrl: z.string().optional(),
     projectDir: z.string(),
     availableDocs: z.array(z.string()),
     availableArtboards: z.array(z.string()),
     currentDoc: z.object({
       artifact: z.string(),
       webUrl: z.string(),
+      embedUrl: z.string().optional(),
       blocks: z.array(
         z.object({
           id: z.string(),
@@ -58,6 +60,7 @@ export const getRealDataRpc = defineRpc({
     currentArtboard: z.object({
       artifact: z.string(),
       webUrl: z.string(),
+      embedUrl: z.string().optional(),
       boards: z.array(
         z.object({
           id: z.string(),
