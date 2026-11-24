@@ -1,148 +1,53 @@
-import type { PluginButtonRegistration, PluginClientContext } from "@getpaseo/plugin/client";
-import { DocumentPanel } from "./client/DocumentPanel.js";
-import { ArtboardPanel } from "./client/ArtboardPanel.js";
-import { ryugiAttachments, initSessionSingletonRpc } from "./shared/contracts.js";
+import { openExternalUrl, type PluginButtonRegistration, type PluginClientContext } from "@getpaseo/plugin/client";
+import { ryugiAttachments, sessionDataRpc, workspaceChanges } from "./shared/contracts.js";
 
 export default function contribute(client: PluginClientContext) {
-  // 1. 注册工作区面板 (Agent Context Panel)
-  const removeDocPanel = client.addWorkspacePanel({
-    id: "ryugi-document",
-    title: "需求 PRD 文档",
-    icon: "FileText",
-    context: "agent",
-    locations: ["workspace"],
-    Component: DocumentPanel,
-  });
-
-  const removeArtboardPanel = client.addWorkspacePanel({
-    id: "ryugi-artboard",
-    title: "需求原型画板",
-    icon: "LayoutGrid",
-    context: "agent",
-    locations: ["workspace"],
-    Component: ArtboardPanel,
-  });
-
-  // 2. 注册 Composer 附件源（通过 @ 实时引用段落规范与真实批注）
-  const removeAttachmentSource = client.addAttachmentSource(ryugiAttachments);
-
-  // 3. 在 Agent 对话输入框上方悬浮两个入口 (Composer Pills)
-  const pills = new Map<string, { docPill: PluginButtonRegistration; artPill: PluginButtonRegistration }>();
+  const removeSource = client.addAttachmentSource(ryugiAttachments);
   const lifetime = new AbortController();
-
-  const registerPillsForAgent = (agent: { id: string; workspaceId?: string | null }) => {
-    if (lifetime.signal.aborted || !agent.workspaceId) return;
-    const agentId = agent.id;
-    const workspaceId = agent.workspaceId;
-
-    // 清理已存在的注册
-    const existing = pills.get(agentId);
-    if (existing) {
-      existing.docPill.remove();
-      existing.artPill.remove();
-      pills.delete(agentId);
-    }
-
-    const docPill = client.addComposerPill({
-      id: "ryugi-doc-pill",
-      workspaceId,
-      agentId,
-      button: {
-        title: "PRD 文档",
-        label: "PRD 文档",
-        icon: "FileText",
-        behavior: {
-          kind: "action",
-          onPress() {
-            client.openPanel("ryugi-document", { workspaceId, agentId });
-          },
-        },
-      },
-    });
-
-    const artPill = client.addComposerPill({
-      id: "ryugi-art-pill",
-      workspaceId,
-      agentId,
-      button: {
-        title: "原型画板",
-        label: "原型画板",
-        icon: "LayoutGrid",
-        behavior: {
-          kind: "action",
-          onPress() {
-            client.openPanel("ryugi-artboard", { workspaceId, agentId });
-          },
-        },
-      },
-    });
-
-    pills.set(agentId, { docPill, artPill });
-  };
-
-  const removeAllPills = () => {
-    for (const { docPill, artPill } of pills.values()) {
-      docPill.remove();
-      artPill.remove();
-    }
-    pills.clear();
-  };
-
-  // 订阅 Agent 列表，确保所有会话的输入框上方都有两个常驻悬浮入口
-  void client.paseo.agents
-    .list({ subscribe: {}, signal: lifetime.signal })
-    .then(({ subscription }) => {
-      subscription.subscribe({
-        snapshot: ({ entries }) => {
-          removeAllPills();
-          for (const { agent } of entries) {
-            registerPillsForAgent(agent);
-          }
-        },
-        update: (message) => {
-          if (message.type !== "agent_update") return;
-          const update = message.payload;
-          if (update.kind === "upsert") {
-            registerPillsForAgent(update.agent);
-          } else {
-            const existing = pills.get(update.agentId);
-            if (existing) {
-              existing.docPill.remove();
-              existing.artPill.remove();
-              pills.delete(update.agentId);
-            }
-          }
-        },
+  const agents = new Map<string, { workspaceId: string; checking: boolean; pending: boolean; doc?: PluginButtonRegistration; art?: PluginButtonRegistration; docUrl?: string; artUrl?: string; stopWatch?: () => void }>();
+  const remove = (id: string) => { const state = agents.get(id); state?.stopWatch?.(); state?.doc?.remove(); state?.art?.remove(); agents.delete(id); };
+  const check = async (id: string) => {
+    const state = agents.get(id);
+    if (!state || lifetime.signal.aborted) return;
+    if (state.checking) { state.pending = true; return; }
+    state.checking = true;
+    try {
+      const result = await client.rpc(sessionDataRpc, { agentId: id, workspaceId: state.workspaceId });
+      if (lifetime.signal.aborted || agents.get(id) !== state) return;
+      const register = (kind: "document" | "artboard") => client.addComposerPill({
+        id: kind === "document" ? "ryugi-document" : "ryugi-artboard", workspaceId: state.workspaceId, agentId: id,
+        button: { title: kind === "document" ? "文档" : "画板", icon: kind === "document" ? "FileText" : "LayoutGrid", behavior: { kind: "action", onPress: () => { const url = kind === "document" ? state.docUrl : state.artUrl; if (url) return openExternalUrl(url); } } },
       });
-      return undefined;
-    })
-    .catch((error) => {
-      if (!lifetime.signal.aborted) {
-        console.error("[Ryugi] Failed to subscribe to agents for composer pills:", error);
-      }
-    });
-
-  // 4. 注册快捷 Slash Command: /ryugi
-  const removeSlashCommand = client.addSlashCommand({
-    name: "ryugi",
-    description: "为当前会话初始化专属 PRD 文档与原型画板工作台",
-    argumentHint: "[需求标题]",
-    context: "agent",
-    async onSubmit({ args, agent, rpc, openPanel }) {
-      await rpc(initSessionSingletonRpc, {
-        agentId: agent.id,
-        title: args || undefined,
-      });
-      openPanel("ryugi-document");
-    },
-  });
-
-  return () => {
-    lifetime.abort();
-    removeAllPills();
-    removeDocPanel();
-    removeArtboardPanel();
-    removeAttachmentSource();
-    removeSlashCommand();
+      state.docUrl = result.artifacts.find((x) => x.artifact.startsWith("document/"))?.url;
+      state.artUrl = result.artifacts.find((x) => x.artifact.startsWith("artboard/"))?.url;
+      const hasDoc = !!state.docUrl;
+      const hasArt = !!state.artUrl;
+      if (hasDoc && !state.doc) state.doc = register("document");
+      if (!hasDoc && state.doc) { state.doc.remove(); state.doc = undefined; }
+      if (hasArt && !state.art) state.art = register("artboard");
+      if (!hasArt && state.art) { state.art.remove(); state.art = undefined; }
+    } catch (error) { console.error("[Ryugi] 会话同步失败", error); }
+    finally { state.checking = false; if (state.pending) { state.pending = false; void check(id); } }
   };
+  const register = (agent: { id: string; workspaceId?: string | null }) => {
+    if (!agent.workspaceId) { remove(agent.id); return; }
+    const old = agents.get(agent.id);
+    if (!old || old.workspaceId !== agent.workspaceId) {
+      remove(agent.id);
+      const state = { workspaceId: agent.workspaceId, checking: false, pending: false, stopWatch: undefined as (() => void) | undefined };
+      agents.set(agent.id, state);
+      const watch = client.subscribe(workspaceChanges, { workspaceId: agent.workspaceId }, () => { void check(agent.id); }, { signal: lifetime.signal, onClosed: ({ error }) => { if (error) console.error("[Ryugi] 文件订阅失败", error); } });
+      state.stopWatch = watch;
+      void watch.ready.catch((error) => { if (!lifetime.signal.aborted) console.error("[Ryugi] 文件订阅失败", error); });
+    }
+    void check(agent.id);
+  };
+  void client.paseo.agents.list({ subscribe: {}, signal: lifetime.signal }).then(({ subscription }) => {
+    subscription.subscribe({
+      snapshot: ({ entries }) => { for (const id of agents.keys()) remove(id); for (const { agent } of entries) register(agent); },
+      update: (message) => { if (message.type !== "agent_update") return; const update = message.payload; if (update.kind === "upsert") register(update.agent); else remove(update.agentId); },
+    });
+  }).catch((error) => { if (!lifetime.signal.aborted) console.error("[Ryugi] 会话订阅失败", error); });
+  const timer = setInterval(() => { for (const id of agents.keys()) void check(id); }, 60000);
+  return () => { lifetime.abort(); clearInterval(timer); for (const id of agents.keys()) remove(id); removeSource(); };
 }

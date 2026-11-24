@@ -1,71 +1,22 @@
-# ryugi-paseo-plugin
+# Ryugi Monitor
 
-> **Paseo Plugin for Ryugi Interactive Artifacts & Coding Agent Workbench**
+插件为 Paseo 会话提供隔离的 Ryugi 工件 CLI 和完整 workflow skills。Agent 创建工件后，评论、方案选择、问答提交及撤回通过本机 socket 通知对应 Agent 继续处理。传输确认不代表反馈已经处理。
 
-This plugin natively integrates [Innei/ryugi](https://github.com/Innei/ryugi) into [Paseo](https://paseo.sh), bridging interactive design documents, review comments, and multi-variant artboards directly with the Paseo agent conversation.
+输入框上方仅在当前会话存在对应工件时显示文档、画板入口，点击直接打开工件地址。附件菜单可手动搜索“Ryugi 评论”。Agent 不自动打开或操作浏览器，不需要各 Agent 的 Ryugi hook 或 Paseo Hub Triggers。
 
----
-
-## Key Highlights
-
-- **Floating Composer Pills (悬浮入口)**:
-  Directly registers two floating buttons (`PRD 文档` and `原型画板`) in the composer track bar above every Agent's message input box. One click opens the document workspace or artboard canvas.
-- **Authentic Interactive Web UI (原生 Web 画板与文档嵌入)**:
-  Instead of rendering simulated mobile elements, both panels natively embed the authentic Ryugi web application (`http://localhost:27319/document/...` and `http://localhost:27319/artboard/...`) via a strict `client/web.tsx` boundary, supporting full zoom, pan, selection, inspector, and line-level annotations.
-- **Session Singleton (需求会话单例约束)**:
-  Enforces 1 requirement session = 1 fixed Document (`document/session-<shortId>`) + 1 fixed Artboard (`artboard/session-<shortId>`), evolving in-place rather than generating scattered artifacts.
-- **Bi-Directional Message Bridge (双向消息打通)**:
-  - **From Ryugi to Agent**: One-click "同步批注到对话" / "同步画板到对话" compiles review comments, anchor IDs, and layout variants directly into the current Agent dialogue via `paseo.agents.ref(agentId).send(...)`.
-  - **Pattern B Composer Attachment**: Users can type `@` in the composer to search and attach specific document blocks, anchor IDs, or artboard components into their prompts.
-- **Zero-Poll Daemon Integration**:
-  Runs directly with the Ryugi local server on port 27319 without terminal polling or shell hooks.
-
----
-
-## Project Structure
-
-```text
-ryugi-paseo-plugin/
-├── paseo-plugin.json      # Plugin manifest & Paseo semver requirement
-├── package.json           # Dependencies: @getpaseo/plugin, React, React Native, Zod
-├── tsconfig.json          # TypeScript configuration
-├── shared/
-│   ├── contracts.ts       # Lowercase kebab-case RPCs and AttachmentSource contracts
-│   └── types.ts           # Shared data models
-├── server/
-│   ├── realRyugiBridge.ts # Real CLI & artifacts engine connector, session singleton creator
-│   └── ryugiStore.ts      # Data formatting & search helper
-├── client/
-│   ├── web.tsx            # Web boundary for iframe rendering & postMessage bridging
-│   ├── DocumentPanel.tsx  # Document workspace panel embedding real Ryugi doc UI
-│   └── ArtboardPanel.tsx  # Artboard workspace panel embedding real Ryugi canvas UI
-├── index.client.tsx        # Client entrypoint: panels, composer pills, slash command
-└── index.server.ts        # Server entrypoint: RPC handlers
-```
-
----
-
-## Development & Verification
+需要 Paseo 0.17.3 及以上、Node.js、npm 和 Git。首次安装需要联网下载固定版本 `ryugi-artifacts@1.108.1` 与固定提交的 full skills；插件安装的 build 步骤自动准备运行时。本地目录开发先运行：
 
 ```bash
-# Typecheck
+npm install
+npm run setup:runtime
 npm run typecheck
-
-# Mobile/Web boundary audit (Paseo spec)
-rg -n "document\.|window\.|localStorage|navigator\.|<[a-z]+[ >]|className=|onClick=" client/
+npm test
 ```
 
----
+运行时位于 `~/.paseo/ryugi-runtime/1.108.1`，可通过启动插件进程前设置 `PASEO_RYUGI_RUNTIME_DIR` 调整。底层 CLI 位于 `node_modules/ryugi-artifacts/dist/cli.cjs`，完整技能位于 `workflow/skills`，服务状态位于 `state/server`。主服务候选端口为 27419–27421，画板服务候选端口为 27429–27431，Unix socket 使用独立目录。每个工作区的工件位于 `projects/<工作区绝对路径的 SHA256 前16位>/.ryugi/artifacts`。
 
-## Installation in Paseo
+插件不运行 Ryugi launcher，不安装宿主 hook，不修改用户 PATH 或 Agent 配置，也不向用户全局 skill 目录安装文件。每次交互会话打开时，插件临时注入 full skills 索引和绝对路径，并提供 `ryugi` 工具。Agent 按阶段直接读取技能文件，通过工具操作私有工件目录；项目组件与设计规范仍从实际源码工作区读取。默认按上游 `using-ryugi` 自动路由新需求、设计、实现和问题排查，无需明确提到 Ryugi；普通问答和只读检查不进入工作流。用户指令和项目规范优先。
 
-```bash
-# Install local plugin
-paseo plugin install /absolute/path/to/ryugi-paseo-plugin --id ryugi-paseo
+新建会话可直接说：“开发一个新需求：……”或“设计一个新功能：……”。插件重载后，空闲会话会在下次发送消息前重新打开并获得工具和指令，正在执行的轮次不会被打断。原用户 Ryugi 的工件不会自动迁移到私有目录。
 
-# Reload after edits
-paseo plugin reload ryugi-paseo
-
-# Inspect logs
-paseo plugin logs ryugi-paseo
-```
+会话绑定来自工具启动工件及 Agent 实际交付的本机地址。同一工件被多个会话引用时，各绑定会话都会接收通知。客户端退出不会停止已有 monitor；插件重载后在会话恢复、完成一轮或界面同步时重建绑定。文档、画板入口由文件事件刷新，60 秒查询仅作入口刷新兜底，反馈通知通过 socket 主动推送。
