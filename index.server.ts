@@ -1,5 +1,11 @@
+import path from "node:path";
+import { readFile } from "node:fs/promises";
+import { URL } from "node:url";
+import { remoteAccessSettings, remoteArtifactRpc, startTunnelRpc, stopTunnelRpc, tunnelStatus } from "./shared/remoteAccess.js";
+import { createLocalProbe, createQuickTunnel } from "./server/quickTunnel.js";
 import type { PluginHandlerContext, PluginServerContext } from "@getpaseo/plugin/server";
 import { sessionDataRpc, workspaceChanges } from "./shared/contracts.js";
+import { browserChanges, browserSettings, defaultArtifactBrowser } from "./shared/browserSettings.js";
 import { realRyugiBridge } from "./server/realRyugiBridge.js";
 import { createMonitorSessions } from "./server/monitorSessions.js";
 import { getPrivateRuntime } from "./server/privateRuntime.js";
@@ -7,7 +13,51 @@ import { ryugiInstructions, createRyugiTool } from "./server/workflowIntegration
 import { watchArtifacts } from "./server/watchArtifacts.js";
 
 export default function contribute(server: PluginServerContext) {
+  const preferences = server.registerSettings(browserSettings);
+  server.handle(browserChanges, async (_input, { push, signal }) => {
+    let changed = false;
+    const unsubscribe = preferences.subscribe((state) => {
+      changed = true;
+      return push({ browser: state.status === "ready" ? state.values.browser : defaultArtifactBrowser });
+    });
+    try {
+      const state = await preferences.read();
+      if (!changed) await push({ browser: state.status === "ready" ? state.values.browser : defaultArtifactBrowser });
+      await new Promise<void>((resolve) => {
+        if (signal.aborted) resolve();
+        else signal.addEventListener("abort", () => resolve(), { once: true });
+      });
+    } finally {
+      await unsubscribe();
+    }
+  });
   const runtime = getPrivateRuntime();
+  const remoteSettings = server.registerSettings(remoteAccessSettings);
+  const localProbe = createLocalProbe();
+  const tunnel = createQuickTunnel(path.join(runtime.runtimeDir, "bin", process.platform === "win32" ? "cloudflared.exe" : "cloudflared"));
+  let tunnelGeneration = 0;
+  const stopTunnel = () => {
+    tunnelGeneration++;
+    return tunnel.stop();
+  };
+  const unsubscribeRemote = remoteSettings.subscribe(() => { stopTunnel(); });
+  server.handle(stopTunnelRpc, () => ({ stopped: stopTunnel() }));
+  server.handle(tunnelStatus, async (_input, { push, signal }) => {
+    if (signal.aborted) return;
+    const unsubscribe = tunnel.subscribe((active) => {
+      void push({ active }).catch((error) => {
+        if (!signal.aborted) console.error("[Ryugi] 隧道状态推送失败", error);
+      });
+    });
+    try {
+      await new Promise<void>((resolve) => {
+        if (signal.aborted) resolve();
+        else signal.addEventListener("abort", () => resolve(), { once: true });
+      });
+    } finally {
+      unsubscribe();
+    }
+  });
   const monitors = createMonitorSessions(undefined, runtime);
   const openedArtifacts = new Map<string, Array<{ artifact: string; url: string }>>();
   let disposed = false;
@@ -45,7 +95,34 @@ export default function contribute(server: PluginServerContext) {
     if (!disposed) monitors.bind(agentId, workspaceId, artifacts.map(({ artifact }) => ({ project: projectDir, artifact })), paseo);
     return { artifacts };
   };
-  server.handle(sessionDataRpc, sessionData);
+  server.handle(sessionDataRpc, async (input, context) => {
+    const { artifacts } = await sessionData(input, context);
+    return artifacts.length ? { artifacts, localProbe: await localProbe.url() } : { artifacts };
+  });
+  async function openTunnel(resolveUrl: () => Promise<string>) {
+    const generation = tunnelGeneration;
+    const settings = await remoteSettings.read();
+    if (settings.status !== "ready" || !settings.values.password) {
+      throw new Error("请先在 Ryugi 插件的「远程访问工件」里设置访问密码。");
+    }
+    const url = await resolveUrl();
+    if (disposed || generation !== tunnelGeneration) throw new Error("Ryugi tunnel was closed. Open it again to start a new tunnel.");
+    return { url: await tunnel.open(url, settings.values.password) };
+  }
+  server.handle(startTunnelRpc, () => openTunnel(async () => {
+    const projectDir = runtime.getProjectDir(runtime.runtimeDir);
+    const local = new URL(await realRyugiBridge.startUrl(projectDir));
+    return new URL("/", local).href;
+  }));
+  server.handle(remoteArtifactRpc, ({ url }) => openTunnel(async () => {
+    const local = URL.parse(url);
+    const info = JSON.parse(await readFile(path.join(runtime.serverHome, "server-info"), "utf8"));
+    const ryugi = typeof info.url === "string" ? URL.parse(info.url) : null;
+    if (!local || !ryugi?.port || local.port !== ryugi.port) {
+      throw new Error("Ryugi 服务端口已变更，请刷新会话工件入口。");
+    }
+    return local.href;
+  }));
   const refresh = (agentId: string, workspaceId: string | null, context: PluginHandlerContext) => {
     if (workspaceId && !disposed) void sessionData({ agentId, workspaceId }, context).catch((error) => console.error("[Ryugi] monitor 绑定失败", error));
   };
@@ -67,5 +144,5 @@ export default function contribute(server: PluginServerContext) {
     });
     return { ...request, tools: [...request.tools, tool], appendSystemPrompt: [...(request.appendSystemPrompt || []), ryugiInstructions(runtime, projectDir, request.cwd)] };
   });
-  return () => { disposed = true; removeTurnHook(); removeArchiveHook(); removeOpenHook(); monitors.close(); };
+  return async () => { disposed = true; localProbe.close(); tunnel.stop(); await unsubscribeRemote(); removeTurnHook(); removeArchiveHook(); removeOpenHook(); monitors.close(); };
 }

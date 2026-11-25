@@ -3,19 +3,35 @@ const Module = require("node:module");
 const test = require("node:test");
 const { PluginTranslationRuntime } = require("@getpaseo/plugin/client/host");
 
-test("入口直接打开工件地址，客户端不投递消息或修改草稿", async () => {
+test("工件入口根据插件设置打开内置浏览器或系统默认浏览器", async () => {
   const load = Module._load;
+  const external = [];
   const opened = [];
+  const remoteCalls = [];
+  const originalFetch = global.fetch;
+  let probe;
   Module._load = function (name, ...args) {
-    if (name === "@getpaseo/plugin/client/ui") return { Icon: "Icon" };
+    if (name === "react") return { ...load.call(this, name, ...args), useEffect: (effect) => effect(), useState: (initial) => [initial, () => {}] };
+    if (name === "@getpaseo/plugin/client/ui") return { Icon: "Icon", ExternalLink: "ExternalLink", SettingsCard: "SettingsCard", SettingsSelect: "SettingsSelect" };
     if (name === "react-native") return { Pressable: "Pressable", Text: "Text", View: "View", StyleSheet: { create: (styles) => styles } };
-    if (name === "@getpaseo/plugin/client") return { ...load.call(this, name, ...args), openExternalUrl: async (url) => opened.push(url) };
+    if (name === "@getpaseo/plugin/client") return {
+      ...load.call(this, name, ...args),
+      openExternalUrl: async (url) => external.push(url),
+      useTranslation: () => ({ t: (key) => key }),
+      useSettings: (definition) => ({
+        status: "ready", values: definition.schema.parse({}), revision: "current", saving: false,
+        save: async (values, revision) => { saved.push({ values, revision }); onBrowserChange?.(values); return true; },
+      }),
+    };
     return load.call(this, name, ...args);
   };
   let contribute;
   try { contribute = require("../index.client.tsx").default; } finally { Module._load = load; }
   let observer;
   let onChange;
+  let onBrowserChange;
+  let settingsScreen;
+  const saved = [];
   let pill;
   const active = new Set();
   const buttons = new Map();
@@ -23,14 +39,36 @@ test("入口直接打开工件地址，客户端不投递消息或修改草稿",
   const agent = { id: "agent", workspaceId: "ws" };
   let transformer;
   let renderer;
+  let screen;
+  let route;
+  const desktop = { openBrowser: (target) => opened.push(target) };
+  const renderScreen = (navigation) => screen.Component({
+    params: route.params,
+    navigation,
+    theme: { colors: { foreground: "#000" } },
+    layout: { compact: false },
+  });
   let locale = "en";
   const runtime = new PluginTranslationRuntime({ getLocale: () => locale, subscribe: () => () => {} });
   const client = {
+    addSettingsScreen: (value) => { settingsScreen = value; return () => {}; },
+    addScreen: (value) => { screen = value; return () => {}; },
+    openScreen: (value) => { route = value; renderScreen(desktop); },
     addTimelineTransformer: (value) => { transformer = value; return () => {}; },
     addTimelineRenderer: (value) => { renderer = value; return () => {}; },
     addComposerPill: ({ id, button }) => { active.add(id); buttons.set(id, button); pill = button; return { remove: () => active.delete(id) }; },
-    subscribe: (_contract, _input, callback) => { onChange = callback; return Object.assign(() => {}, { ready: Promise.resolve() }); },
-    rpc: async () => ({ artifacts }),
+    subscribe: (contract, _input, callback) => {
+      if (contract.name === "ryugi.workspace-changes") onChange = callback;
+      else onBrowserChange = callback;
+      return Object.assign(() => {}, { ready: Promise.resolve() });
+    },
+    rpc: async (contract, input) => {
+      if (contract.name === "ryugi.remote-artifact") {
+        remoteCalls.push(input);
+        return { url: "https://client-test.trycloudflare.com/html/updated-id?key=new" };
+      }
+      return { artifacts, localProbe: probe };
+    },
     paseo: { agents: { list: async () => ({ subscription: { subscribe: (o) => { observer = o; o.snapshot({ entries: [{ agent }] }); } } }) } },
   };
   const cleanup = contribute(client);
@@ -49,7 +87,9 @@ test("入口直接打开工件地址，客户端不投递消息或修改草稿",
     locale = "zh-CN";
     assert.equal(runtime.resolve(pill.title), "画板");
     await pill.behavior.onPress();
-    assert.deepEqual(opened, ["http://localhost/x"]);
+    assert.deepEqual(opened, [{ url: "http://localhost/x", workspaceId: "ws" }]);
+    renderScreen(desktop);
+    assert.equal(opened.length, 1);
     onChange({ changed: true });
     await settle(); await settle();
     assert.deepEqual([...active], ["ryugi-artboard"]);
@@ -64,7 +104,7 @@ test("入口直接打开工件地址，客户端不投递消息或修改草稿",
       const button = buttons.get(`ryugi-${kinds[i]}`);
       assert.equal(runtime.resolve(button.title), titles[i]);
       await button.behavior.onPress();
-      assert.equal(opened.at(-1), artifacts[i].url);
+      assert.deepEqual(opened.at(-1), { url: artifacts[i].url, workspaceId: "ws" });
     }
     locale = 'en';
     assert.equal(runtime.resolve(buttons.get('ryugi-slides').title), 'Slides');
@@ -73,8 +113,42 @@ test("入口直接打开工件地址，客户端不投递消息或修改草稿",
     await settle(); await settle();
     assert.deepEqual([...active], ['ryugi-html']);
     await buttons.get('ryugi-html').behavior.onPress();
-    assert.equal(opened.at(-1), 'http://localhost/html/updated-id?key=new');
+    assert.deepEqual(opened.at(-1), { url: 'http://localhost/html/updated-id?key=new', workspaceId: "ws" });
+    assert.deepEqual(external, []);
+    client.openScreen = (value) => { route = value; };
+    await buttons.get('ryugi-html').behavior.onPress();
+    const fallback = renderScreen(undefined);
+    assert.equal(fallback.props.children.props.href, 'http://localhost/html/updated-id?key=new');
+    assert.equal(opened.length, 10);
+    assert.deepEqual(external, []);
+    assert.ok(settingsScreen, "插件应注册浏览器设置页面");
+    const { children: select } = settingsScreen.Component({ theme: { colors: { foreground: "#000" } } }).props;
+    assert.equal(select.props.value, "paseo");
+    await select.props.onValueChange("system");
+    assert.deepEqual(saved, [{ values: { browser: "system" }, revision: "current" }]);
+    const previousRoute = route;
+    await buttons.get('ryugi-html').behavior.onPress();
+    assert.deepEqual(external, ['http://localhost/html/updated-id?key=new']);
+    assert.equal(route, previousRoute);
+    onBrowserChange({ browser: "paseo" });
+    client.openScreen = (value) => { route = value; renderScreen(desktop); };
+    await buttons.get('ryugi-html').behavior.onPress();
+    assert.equal(opened.length, 11);
+    probe = "http://127.0.0.1:49152/this-host";
+    onChange({ changed: true });
+    await settle();
+    global.fetch = async () => ({ ok: true, text: async () => "this-host" });
+    await buttons.get('ryugi-html').behavior.onPress();
+    assert.equal(opened.at(-1).url, "http://localhost/html/updated-id?key=new");
+    assert.deepEqual(remoteCalls, []);
+    global.fetch = async () => ({ ok: true, text: async () => "different-host" });
+    await buttons.get('ryugi-html').behavior.onPress();
+    assert.equal(opened.at(-1).url, "https://client-test.trycloudflare.com/html/updated-id?key=new");
+    assert.deepEqual(remoteCalls, [{ url: "http://localhost/html/updated-id?key=new" }]);
+    onBrowserChange({ browser: "system" });
+    await buttons.get('ryugi-html').behavior.onPress();
+    assert.equal(external.at(-1), "https://client-test.trycloudflare.com/html/updated-id?key=new");
     observer.update({ type: 'agent_update', payload: { kind: 'remove', agentId: 'agent' } });
     assert.equal(active.size, 0);
-  } finally { cleanup(); }
+  } finally { global.fetch = originalFetch; cleanup(); }
 });

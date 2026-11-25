@@ -38,7 +38,7 @@ test('full skills 使用私有绝对路径且注入会话工具，不改其他�
       fs.mkdirSync(path.join(dir, name));
       fs.writeFileSync(path.join(dir, name, 'SKILL.md'), name);
     }
-    const runtime = { skillsDir: dir, getProjectDir: () => '/private-project' };
+    const runtime = { runtimeDir: dir, skillsDir: dir, getProjectDir: () => '/private-project' };
     const prompt = ryugiInstructions(runtime, '/private-project', '/source');
     assert.match(prompt, new RegExp(path.join(dir, 'brainstorming', 'SKILL.md')));
     assert.match(prompt, /Never open, inspect or automate/);
@@ -51,7 +51,32 @@ test('full skills 使用私有绝对路径且注入会话工具，不改其他�
     const contribute = require('../index.server.ts').default;
     Module._load = originalLoad;
     const hooks = {};
-    const cleanup = contribute({ handle() {}, addHook(name, fn) { hooks[name] = fn; return () => {}; } });
+    let settingsListener;
+    let browserChanges;
+    const cleanup = contribute({
+      handle(contract, fn) {
+        if (contract.name === "ryugi.browser-changes") browserChanges = fn;
+      },
+      registerSettings(definition) {
+        return {
+          read: async () => ({ status: "ready", values: definition.schema.parse({}) }),
+          subscribe(listener) { if (definition.id !== "browser") return () => {}; settingsListener = listener; return () => { settingsListener = undefined; }; },
+        };
+      },
+      addHook(name, fn) { hooks[name] = fn; return () => {}; },
+    });
+    const browserEvents = [];
+    const subscription = new AbortController();
+    try {
+      assert.ok(browserChanges, "插件应提供浏览器设置订阅");
+      const listening = browserChanges({}, { push: async (event) => browserEvents.push(event), signal: subscription.signal });
+      await new Promise((resolve) => setImmediate(resolve));
+      await settingsListener({ status: "ready", values: { browser: "system" } });
+      subscription.abort();
+      await listening;
+      assert.deepEqual(browserEvents, [{ browser: "paseo" }, { browser: "system" }]);
+      assert.equal(settingsListener, undefined);
+    } finally { subscription.abort(); }
     const context = { paseo: { workspaces: { ref: () => ({ current: () => ({ workspaceDirectory: '/source' }) }) } } };
     const request = { purpose: 'interactive', agentId: 'a', workspaceId: 'w', cwd: '/source', tools: [{ name: 'existing' }], appendSystemPrompt: ['existing prompt'], env: { KEEP: 'yes' } };
     const updated = await hooks['agent.open.before']({ request }, context);
@@ -61,6 +86,6 @@ test('full skills 使用私有绝对路径且注入会话工具，不改其他�
     assert.equal(updated.env, request.env);
     assert.deepEqual(request.tools, [{ name: 'existing' }]);
     assert.equal(await hooks['agent.open.before']({ request: { ...request, purpose: 'history' } }, context), undefined);
-    cleanup();
+    await cleanup();
   } finally { Module._load = originalLoad; fs.rmSync(dir, { recursive: true, force: true }); }
 });

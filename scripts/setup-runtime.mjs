@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { setupCloudflared } from "./setup-cloudflared.mjs";
 
 export const RYUGI_VERSION = "1.108.1";
 export const RYUGI_WORKFLOW_COMMIT = "6f5b4cc70c0493f4848a8ec1fa090258389eff08";
@@ -51,7 +52,9 @@ export function setupRuntime({
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    console.log(`Ryugi 插件专用运行时已就绪：${setupRuntime()}`);
+    const runtimeDir = setupRuntime();
+    await setupCloudflared(runtimeDir);
+    console.log(`Ryugi 插件专用运行时已就绪：${runtimeDir}`);
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;

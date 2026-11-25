@@ -5,6 +5,7 @@ export const sessionDataRpc = defineRpc({
   name: "ryugi.session-data",
   input: z.object({ agentId: z.string(), workspaceId: z.string() }),
   output: z.object({
+    localProbe: z.string().optional(),
     artifacts: z.array(z.object({ artifact: z.string(), url: z.string() })),
   }),
 });

@@ -25,6 +25,13 @@ export class RealRyugiBridge {
     return parsed;
   }
 
+  async startUrl(projectDir: string, artifact?: string): Promise<string> {
+    const args = ["start", "--background", "--no-open", "--project-dir", projectDir];
+    if (artifact) args.push("--artifact", artifact);
+    const { data } = await this.run([...args, "--json"]);
+    return data.url;
+  }
+
   async sessionArtifacts(projectDir: string, texts: string[]) {
     if (!fs.existsSync(path.join(projectDir, ".ryugi", "artifacts"))) return [];
     const { data } = await this.run(["get", "--project-dir", projectDir, "--json"]);
@@ -45,8 +52,7 @@ export class RealRyugiBridge {
       const id = fs.readFileSync(idFile, "utf8").trim();
       const type = artifact.split("/")[0];
       if (!id || !paths.has(`/${type}/${id}`)) continue;
-      const { data } = await this.run(["start", "--background", "--no-open", "--project-dir", projectDir, "--artifact", artifact, "--json"]);
-      artifacts.push({ artifact, url: data.url });
+      artifacts.push({ artifact, url: await this.startUrl(projectDir, artifact) });
     }
     return artifacts;
   }
