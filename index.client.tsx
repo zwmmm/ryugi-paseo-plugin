@@ -2,6 +2,9 @@ import { openExternalUrl, type PluginButtonRegistration, type PluginText, type P
 import { MonitorNotice, monitorNoticeSchema, parseMonitorNotice } from "./client/MonitorNotice.js";
 import { messages } from "./client/messages.js";
 import { sessionDataRpc, workspaceChanges } from "./shared/contracts.js";
+import { artifactTypes, type ArtifactType } from "./shared/artifacts.js";
+
+const artifactIcons = { document: "FileText", artboard: "LayoutGrid", html: "Code", slides: "Presentation", whiteboard: "Pencil", verify: "ClipboardCheck", report: "ChartNoAxesCombined", storyboard: "Clapperboard" };
 
 export default function contribute(client: PluginClientContext) {
   const removeTransformer = client.addTimelineTransformer({
@@ -14,8 +17,8 @@ export default function contribute(client: PluginClientContext) {
   });
   const removeRenderer = client.addTimelineRenderer({ kind: "ryugi-monitor-notice", version: 1, schema: monitorNoticeSchema, Component: MonitorNotice });
   const lifetime = new AbortController();
-  const agents = new Map<string, { workspaceId: string; checking: boolean; pending: boolean; doc?: PluginButtonRegistration<PluginText>; art?: PluginButtonRegistration<PluginText>; docUrl?: string; artUrl?: string; stopWatch?: () => void }>();
-  const remove = (id: string) => { const state = agents.get(id); state?.stopWatch?.(); state?.doc?.remove(); state?.art?.remove(); agents.delete(id); };
+  const agents = new Map<string, { workspaceId: string; checking: boolean; pending: boolean; artifacts: Map<ArtifactType, { url: string; button?: PluginButtonRegistration<PluginText> }>; stopWatch?: () => void }>();
+  const remove = (id: string) => { const state = agents.get(id); state?.stopWatch?.(); for (const entry of state?.artifacts.values() || []) entry.button?.remove(); agents.delete(id); };
   const check = async (id: string) => {
     const state = agents.get(id);
     if (!state || lifetime.signal.aborted) return;
@@ -24,18 +27,20 @@ export default function contribute(client: PluginClientContext) {
     try {
       const result = await client.rpc(sessionDataRpc, { agentId: id, workspaceId: state.workspaceId });
       if (lifetime.signal.aborted || agents.get(id) !== state) return;
-      const register = (kind: "document" | "artboard") => client.addComposerPill({
-        id: kind === "document" ? "ryugi-document" : "ryugi-artboard", workspaceId: state.workspaceId, agentId: id,
-        button: { title: messages.message(kind), icon: kind === "document" ? "FileText" : "LayoutGrid", behavior: { kind: "action", onPress: () => { const url = kind === "document" ? state.docUrl : state.artUrl; if (url) return openExternalUrl(url); } } },
-      });
-      state.docUrl = result.artifacts.find((x) => x.artifact.startsWith("document/"))?.url;
-      state.artUrl = result.artifacts.find((x) => x.artifact.startsWith("artboard/"))?.url;
-      const hasDoc = !!state.docUrl;
-      const hasArt = !!state.artUrl;
-      if (hasDoc && !state.doc) state.doc = register("document");
-      if (!hasDoc && state.doc) { state.doc.remove(); state.doc = undefined; }
-      if (hasArt && !state.art) state.art = register("artboard");
-      if (!hasArt && state.art) { state.art.remove(); state.art = undefined; }
+      for (const kind of artifactTypes) {
+        const url = result.artifacts.find((x) => x.artifact.startsWith(`${kind}/`))?.url;
+        const entry = state.artifacts.get(kind);
+        if (!url) { entry?.button?.remove(); state.artifacts.delete(kind); }
+        else if (entry) entry.url = url;
+        else {
+          const next = { url, button: undefined as PluginButtonRegistration<PluginText> | undefined };
+          next.button = client.addComposerPill({
+            id: `ryugi-${kind}`, workspaceId: state.workspaceId, agentId: id,
+            button: { title: messages.message(kind), icon: artifactIcons[kind], behavior: { kind: "action", onPress: () => openExternalUrl(next.url) } },
+          });
+          state.artifacts.set(kind, next);
+        }
+      }
     } catch (error) { console.error("[Ryugi] 会话同步失败", error); }
     finally { state.checking = false; if (state.pending) { state.pending = false; void check(id); } }
   };
@@ -44,7 +49,7 @@ export default function contribute(client: PluginClientContext) {
     const old = agents.get(agent.id);
     if (!old || old.workspaceId !== agent.workspaceId) {
       remove(agent.id);
-      const state = { workspaceId: agent.workspaceId, checking: false, pending: false, stopWatch: undefined as (() => void) | undefined };
+      const state = { workspaceId: agent.workspaceId, checking: false, pending: false, artifacts: new Map(), stopWatch: undefined as (() => void) | undefined };
       agents.set(agent.id, state);
       const watch = client.subscribe(workspaceChanges, { workspaceId: agent.workspaceId }, () => { void check(agent.id); }, { signal: lifetime.signal, onClosed: ({ error }) => { if (error) console.error("[Ryugi] 文件订阅失败", error); } });
       state.stopWatch = watch;

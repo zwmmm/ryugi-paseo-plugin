@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import { URL } from "node:url";
 
 import { getPrivateRuntime } from "./privateRuntime.js";
+import { artifactTypes } from "../shared/artifacts.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -38,7 +39,7 @@ export class RealRyugiBridge {
     }
     const artifacts: Artifact[] = [];
     for (const { artifact } of data.items as Array<{ artifact: string }>) {
-      if (!artifact.startsWith("document/") && !artifact.startsWith("artboard/")) continue;
+      if (!artifactTypes.some((type) => artifact.startsWith(`${type}/`))) continue;
       const idFile = path.join(projectDir, ".ryugi", "artifacts", artifact, ".artifact-id");
       if (!fs.existsSync(idFile)) continue;
       const id = fs.readFileSync(idFile, "utf8").trim();

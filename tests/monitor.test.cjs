@@ -117,3 +117,15 @@ test("HTTP 订阅使用 server-info key 和项目 header，非成功状态抛错
   assert.deepEqual(requests[0], { url: "/api/agent/subscribe?key=a%2Fb", project: encodeURIComponent(subscription.project), body: subscription });
   await assert.rejects(subscribeMonitor(home, subscription), /503/);
 });
+
+
+test("所有工件类型的反馈都能投递并确认", async (t) => {
+  const deliveries = [];
+  const f = await fixture(t, async (event) => { deliveries.push(event.artifact); });
+  const kinds = ['document', 'artboard', 'html', 'slides', 'whiteboard', 'verify', 'report', 'storyboard', 'preview'];
+  f.channel.updateBindings(kinds.map((kind) => ({ project: f.binding.project, artifact: `${kind}/example` })));
+  await until(() => f.subscriptions.length === 10);
+  for (let i = 0; i < kinds.length; i++) f.event(i + 1, { artifact: `${kinds[i]}/example` });
+  await until(() => f.messages.filter((message) => message.t === 'delivered').length === kinds.length);
+  assert.deepEqual(deliveries, kinds.map((kind) => `${kind}/example`));
+});

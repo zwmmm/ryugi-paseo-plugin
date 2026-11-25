@@ -1,5 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
+import { artifactFiles } from "../shared/artifacts.js";
+
+const watchedFiles = new Set<string>([...Object.values(artifactFiles), "comments.json", ".artifact-id"]);
 
 export function watchArtifacts(projectDir: string, onChange: () => void) {
   const ryugiDir = path.join(projectDir, ".ryugi");
@@ -20,7 +23,7 @@ export function watchArtifacts(projectDir: string, onChange: () => void) {
           const file = name?.toString();
           if (recursive) {
             if (file && (file === ".state" || file.startsWith(`.state${path.sep}`))) return;
-            if (event !== "rename" && file && !/(^|[\\/])(comments\.json|canvas\.json|doc\.xml|\.artifact-id)$/.test(file)) return;
+            if (event !== "rename" && file && !watchedFiles.has(file.split(/[\\/]/).at(-1)!)) return;
           } else {
             if (file && file.split(/[\\/]/)[0] !== children[index]) return;
           }

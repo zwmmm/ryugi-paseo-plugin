@@ -18,6 +18,8 @@ test("入口直接打开工件地址，客户端不投递消息或修改草稿",
   let onChange;
   let pill;
   const active = new Set();
+  const buttons = new Map();
+  let artifacts = [{ artifact: "artboard/login", url: "http://localhost/x" }];
   const agent = { id: "agent", workspaceId: "ws" };
   let transformer;
   let renderer;
@@ -26,9 +28,9 @@ test("入口直接打开工件地址，客户端不投递消息或修改草稿",
   const client = {
     addTimelineTransformer: (value) => { transformer = value; return () => {}; },
     addTimelineRenderer: (value) => { renderer = value; return () => {}; },
-    addComposerPill: ({ id, button }) => { active.add(id); pill = button; return { remove: () => active.delete(id) }; },
+    addComposerPill: ({ id, button }) => { active.add(id); buttons.set(id, button); pill = button; return { remove: () => active.delete(id) }; },
     subscribe: (_contract, _input, callback) => { onChange = callback; return Object.assign(() => {}, { ready: Promise.resolve() }); },
-    rpc: async () => ({ artifacts: [{ artifact: "artboard/login", url: "http://localhost/x" }] }),
+    rpc: async () => ({ artifacts }),
     paseo: { agents: { list: async () => ({ subscription: { subscribe: (o) => { observer = o; o.snapshot({ entries: [{ agent }] }); } } }) } },
   };
   const cleanup = contribute(client);
@@ -51,5 +53,28 @@ test("入口直接打开工件地址，客户端不投递消息或修改草稿",
     onChange({ changed: true });
     await settle(); await settle();
     assert.deepEqual([...active], ["ryugi-artboard"]);
+    const kinds = ['document', 'artboard', 'html', 'slides', 'whiteboard', 'verify', 'report', 'storyboard'];
+    artifacts = kinds.map((kind) => ({ artifact: `${kind}/example`, url: `http://localhost/${kind}/actual-id?key=test` }));
+    artifacts.push({ artifact: 'slides/second', url: 'http://localhost/slides/second-id' });
+    onChange({ changed: true });
+    await settle(); await settle();
+    assert.deepEqual([...active].sort(), kinds.map((kind) => `ryugi-${kind}`).sort());
+    const titles = ['文档', '画板', 'HTML', '幻灯片', '白板', '验证报告', '数据报告', '分镜'];
+    for (let i = 0; i < kinds.length; i++) {
+      const button = buttons.get(`ryugi-${kinds[i]}`);
+      assert.equal(runtime.resolve(button.title), titles[i]);
+      await button.behavior.onPress();
+      assert.equal(opened.at(-1), artifacts[i].url);
+    }
+    locale = 'en';
+    assert.equal(runtime.resolve(buttons.get('ryugi-slides').title), 'Slides');
+    artifacts = [{ artifact: 'html/updated', url: 'http://localhost/html/updated-id?key=new' }];
+    onChange({ changed: true });
+    await settle(); await settle();
+    assert.deepEqual([...active], ['ryugi-html']);
+    await buttons.get('ryugi-html').behavior.onPress();
+    assert.equal(opened.at(-1), 'http://localhost/html/updated-id?key=new');
+    observer.update({ type: 'agent_update', payload: { kind: 'remove', agentId: 'agent' } });
+    assert.equal(active.size, 0);
   } finally { cleanup(); }
 });

@@ -5,6 +5,12 @@ export const messages = defineTranslations({
     en: {
       document: "Document",
       artboard: "Artboard",
+      html: "HTML",
+      slides: "Slides",
+      whiteboard: "Whiteboard",
+      verify: "Verification",
+      report: "Data report",
+      storyboard: "Storyboard",
       notice: {
         comments: "Ryugi · New comments received",
         commentsCount_one: "Ryugi · {{count}} new comment received",
@@ -20,6 +26,12 @@ export const messages = defineTranslations({
     "zh-CN": {
       document: "文档",
       artboard: "画板",
+      html: "HTML",
+      slides: "幻灯片",
+      whiteboard: "白板",
+      verify: "验证报告",
+      report: "数据报告",
+      storyboard: "分镜",
       notice: {
         comments: "Ryugi · 收到新评论",
         commentsCount_other: "Ryugi · 收到 {{count}} 条新评论",

@@ -2,7 +2,7 @@
 
 插件为 Paseo 会话提供隔离的 Ryugi 工件 CLI 和完整 workflow skills。Agent 创建工件后，评论、方案选择、问答提交及撤回通过本机 socket 通知对应 Agent 继续处理。传输确认不代表反馈已经处理。时间线中的 monitor 通知默认折叠为摘要，点击可展开原始内容；Agent 仍收到完整通知。通知摘要和工件入口随 Paseo 语言在中英文间切换，其他语言回退英文；评论正文与原始通知保留原文。
 
-输入框上方仅在当前会话存在对应工件时显示文档、画板入口，点击直接打开工件地址。Agent 不自动打开或操作浏览器，不需要各 Agent 的 Ryugi hook 或 Paseo Hub Triggers。
+输入框上方支持文档、画板、HTML、幻灯片、白板、验证报告、数据报告和分镜入口，仅在当前会话存在对应工件时显示，每类一个入口，点击直接打开工件地址。幻灯片对应 Ryugi 的 `slides` 类型，主文件为 HTML，并非 PowerPoint `.pptx` 文件。Agent 不自动打开或操作浏览器，不需要各 Agent 的 Ryugi hook 或 Paseo Hub Triggers。
 
 安装插件：
 

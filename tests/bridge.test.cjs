@@ -47,3 +47,25 @@ test("只将会话交付的工件归属给该会话", async () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+
+test("发现全部八类工件，仅打开当前会话引用的本地页面", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ryugi-types-"));
+  try {
+    const kinds = ['document', 'artboard', 'html', 'slides', 'whiteboard', 'verify', 'report', 'storyboard'];
+    const items = kinds.map((kind) => ({ artifact: `${kind}/example` }));
+    items.push({ artifact: 'html/unreferenced' });
+    for (const { artifact } of items) {
+      const folder = path.join(dir, '.ryugi/artifacts', artifact);
+      fs.mkdirSync(folder, { recursive: true });
+      fs.writeFileSync(path.join(folder, '.artifact-id'), artifact === 'html/unreferenced' ? 'other-id' : `${artifact.split('/')[0]}-id`);
+    }
+    const cli = path.join(dir, 'fake.cjs');
+    fs.writeFileSync(cli, `const args=process.argv.slice(2);const type=args[args.indexOf('--artifact')+1]?.split('/')[0];console.log(JSON.stringify({outcome:'success',data:args[0]==='get'?{items:${JSON.stringify(items)}}:{url:'http://localhost:27419/'+type+'/'+type+'-id?key=test'}}));`);
+    const bridge = new RealRyugiBridge(cli);
+    const references = kinds.map((kind) => `http://localhost:27419/${kind}/${kind}-id?key=test#section`);
+    const found = await bridge.sessionArtifacts(dir, references);
+    assert.deepEqual(found, kinds.map((kind) => ({ artifact: `${kind}/example`, url: `http://localhost:27419/${kind}/${kind}-id?key=test` })));
+    assert.deepEqual(await bridge.sessionArtifacts(dir, ['http://localhost:27419/html/html-id/extra', 'https://localhost:27419/slides/slides-id']), []);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});

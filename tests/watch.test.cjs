@@ -54,3 +54,28 @@ test("目录删除和重建后仍能通知评论变化，停止后释放监听",
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+
+test("所有工件主文件的内容修改都会刷新入口，忽略服务状态文件", async (t) => {
+  const { EventEmitter } = require('node:events');
+  const callbacks = new Map();
+  t.mock.method(fs, 'watch', (dir, options, callback) => {
+    const watcher = new EventEmitter();
+    watcher.close = () => {};
+    callbacks.set(dir, callback);
+    return watcher;
+  });
+  let notifications = 0;
+  const stop = watchArtifacts('/project', () => { notifications++; });
+  try {
+    const files = ['document/a/doc.xml', 'artboard/a/canvas.json', 'html/a/index.html', 'slides/a/index.html', 'whiteboard/a/scene.excalidraw', 'verify/a/verify.xml', 'report/a/report.tsx', 'storyboard/a/storyboard.xml'];
+    for (let i = 0; i < files.length; i++) {
+      callbacks.get('/project/.ryugi/artifacts')('change', files[i]);
+      await delay(200);
+      assert.equal(notifications, i + 1, files[i]);
+    }
+    callbacks.get('/project/.ryugi/artifacts')('change', '.state/snapshot.json');
+    await delay(200);
+    assert.equal(notifications, files.length);
+  } finally { stop(); }
+});

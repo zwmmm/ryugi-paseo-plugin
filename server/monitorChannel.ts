@@ -3,6 +3,9 @@ import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { artifactTypes } from "../shared/artifacts.js";
+
+const artifactPattern = new RegExp(`^(${[...artifactTypes, "preview"].join("|")})/[a-z0-9][a-z0-9-]*$`);
 
 export type MonitorBinding = { project: string; artifact: string };
 export type MonitorEvent = MonitorBinding & {
@@ -173,7 +176,7 @@ export function startMonitorChannel(options: Options) {
           const event = message.event;
           if (!event || !["ryugi-comments", "ryugi-choices", "ryugi-answers"].includes(event.type)
             || typeof event.project !== "string" || !path.isAbsolute(event.project)
-            || typeof event.artifact !== "string" || !/^(document|artboard|whiteboard|slides|storyboard|preview)\/[a-z0-9][a-z0-9-]*$/.test(event.artifact)
+            || typeof event.artifact !== "string" || !artifactPattern.test(event.artifact)
             || !matches(event) || message.id === undefined || message.id === null) continue;
           const token = JSON.stringify([message.id, event]);
           if (completed.has(token)) send({ t: "delivered", id: message.id });

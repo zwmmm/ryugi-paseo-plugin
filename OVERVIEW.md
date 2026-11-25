@@ -1,7 +1,7 @@
-Ryugi Monitor brings Ryugi documents and artboards into your Paseo workflow. Open the artifacts from the Agent session that created them, then leave a comment, choose a design, or answer a question in Ryugi. The feedback goes back to that same session so the Agent can continue.
+Ryugi Monitor brings Ryugi artifacts into your Paseo workflow. Open the artifacts from the Agent session that created them, then leave a comment, choose a design, or answer a question in Ryugi. The feedback goes back to that same session so the Agent can continue.
 
 - **Ryugi included.** The plugin prepares an isolated Ryugi runtime and provides the artifact tool and workflow skills to Paseo Agents when a session opens. The workflow covers design, implementation, debugging, and verification.
-- **Shortcuts above the composer.** The Document and Artboard buttons appear when the current session has the corresponding artifact. Each opens its Ryugi page in the browser.
+- **Shortcuts above the composer.** Shortcuts appear for documents, artboards, HTML pages, slides, whiteboards, verification reports, data reports, and storyboards when the current session has the corresponding artifact. Each opens its Ryugi page in the browser.
 - **Collapsible feedback.** Comments, submitted choices, and answers appear as compact notices in the session timeline. Expand a notice to see the original event, then collapse it to keep the conversation readable.
 
 ### Setup
