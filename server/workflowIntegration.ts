@@ -8,7 +8,7 @@ import type { getPrivateRuntime } from "./privateRuntime.js";
 
 const exec = promisify(execFile);
 type Runtime = ReturnType<typeof getPrivateRuntime>;
-const commands = new Set(["start", "check", "get", "comment", "changes", "scene", "modules", "report", "storyboard", "publish", "pull"]);
+const commands = new Set(["start", "check", "get", "comment", "changes", "scene", "modules", "report", "storyboard"]);
 
 export function ryugiInstructions(runtime: Runtime, projectDir: string, cwd: string) {
   const skills = fs.readdirSync(runtime.skillsDir).filter((name) => fs.existsSync(path.join(runtime.skillsDir, name, "SKILL.md")));
@@ -18,7 +18,7 @@ export function ryugiInstructions(runtime: Runtime, projectDir: string, cwd: str
     ...skills.map((name) => `ryugi:${name}: ${path.join(runtime.skillsDir, name, "SKILL.md")}`),
     `Source workspace: ${cwd}. Inspect its reusable components, layouts and design rules there. Private Ryugi project: ${projectDir}. Artifacts must be written only to the paths returned by the tool; do not put them in the source workspace's .ryugi directory.`,
     "Paseo adaptation overrides upstream host setup: replace ryugi / node app/ryugi.cjs commands with this session's ryugi tool and the same args. The tool selects the private CLI, environment and project directory. Do not invoke a system Ryugi, launcher, install/update, daemon, hook installer, or modify global agent skills/configuration/PATH. Do not install upstream harness integrations.",
-    "Never open, inspect or automate Ryugi in a browser and never invoke a browser automation skill for Ryugi. Return the actual local URL from start for the user to open. Report browser-only verification as pending; do not claim it passed. Do not publish to the cloud unless the user explicitly requests it.",
+    "Never open, inspect or automate Ryugi in a browser and never invoke a browser automation skill for Ryugi. Return the actual local URL from start for the user to open. Report browser-only verification as pending; do not claim it passed. The ryugi tool supports local artifact operations only. Cloud publishing, sharing, sign-in and pull are unavailable through this tool. Do not bypass this restriction with a shell command or another tool.",
     "Paseo monitor forwards submitted comments, choices, answers and withdrawals to this session so you can continue the task. Read complete feedback with the ryugi tool; acknowledge receipts only after applying their evidence. Do not fabricate user choices or acceptance. User instructions and existing project rules take priority.",
   ].join("\n");
 }
@@ -27,10 +27,10 @@ export function createRyugiTool(runtime: Runtime, projectDir: string, onStart: (
   return defineAgentTool({
     name: "ryugi",
     title: "Ryugi",
-    description: "Operate the isolated local Ryugi artifacts CLI. Pass command arguments, e.g. start --artifact document/design. Uses this workspace's private project, never opens a browser. Read the injected full Ryugi skills for workflow instructions.",
+    description: "Operate the isolated local Ryugi artifacts CLI. Pass command arguments, e.g. start --artifact document/design. Uses this workspace's private project, never opens a browser. Local operations only; cloud publishing, sharing, sign-in and pull are not supported. Read the injected full Ryugi skills for workflow instructions.",
     input: z.object({ args: z.array(z.string()).min(1) }),
     async execute({ args }, { signal }) {
-      if (!commands.has(args[0])) return { text: "不支持该命令；此工具仅运行工件 CLI，不安装 launcher、hook 或更新全局配置。", isError: true };
+      if (!commands.has(args[0])) return { text: "不支持该命令；此工具仅支持本地工件操作，不支持云端发布、分享、登录、拉取，也不安装 launcher、hook 或更新全局配置。", isError: true };
       const normalized: string[] = [];
       for (let i = 0; i < args.length; i++) {
         const arg = args[i];
