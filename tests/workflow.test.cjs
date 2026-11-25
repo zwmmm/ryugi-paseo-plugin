@@ -29,29 +29,6 @@ test('私有工具保留 CLI 待处理结果，限制项目并强制后台/no-op
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('私有工具在启动 CLI 前拒绝云端发布、登录、分享和拉取操作', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ryugi-local-only-'));
-  try {
-    const cliPath = path.join(dir, 'fake.cjs');
-    const marker = path.join(dir, 'executed');
-    fs.writeFileSync(cliPath, `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'executed');console.log('executed')`);
-    const tool = createRyugiTool({ cliPath, env: process.env }, dir, async () => assert.fail('must not start'));
-    const context = { signal: new AbortController().signal };
-    for (const args of [
-      ['publish', '--artifact', 'document/test'],
-      ['publish', '--login'],
-      ['publish', '--artifact', 'artboard/test', '--with-refs'],
-      ['publish', '--list'],
-      ['pull', 'https://ryugi.innei.dev/example'],
-      ['cloud'],
-    ]) {
-      const result = await tool.execute({ args }, context);
-      assert.equal(result.isError, true, JSON.stringify(args));
-      assert.equal(fs.existsSync(marker), false, 'rejected commands must not launch the CLI');
-    }
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
 test('full skills 使用私有绝对路径且注入会话工具，不改其他启动配置', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ryugi-skills-'));
   const Module = require('node:module');

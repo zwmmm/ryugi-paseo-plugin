@@ -10,4 +10,4 @@ Requires Paseo 0.17.3 or later, Node.js 20.12 or later, npm, and Git on the daem
 
 ### Data access
 
-The plugin reads artifact locations and feedback events from the host's Ryugi runtime. It routes events to their matching Paseo session. When an Agent reads the feedback, the results can be sent to that Agent's configured provider as part of the session. Local artifact pages do not require a Ryugi Cloud account. The Agent tool supports local artifact operations only; it does not expose cloud publishing, sharing, sign-in, or pull commands.
+The plugin reads artifact locations and feedback events from the host's Ryugi runtime. It routes events to their matching Paseo session. When an Agent reads the feedback, the results can be sent to that Agent's configured provider as part of the session. Local artifact pages do not require a Ryugi Cloud account.
