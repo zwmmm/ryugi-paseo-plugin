@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { PaseoApi } from "@getpaseo/client";
+import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { startMonitorChannel } from "./monitorChannel.js";
 
 type Binding = { project: string; artifact: string };
@@ -7,7 +7,7 @@ type Binding = { project: string; artifact: string };
 export function createMonitorSessions(channelFactory = startMonitorChannel, runtime?: { serverHome: string; socketPath: string }) {
   const channels = new Map<string, ReturnType<typeof startMonitorChannel>>();
   return {
-    bind(agentId: string, workspaceId: string, bindings: Binding[], paseo: PaseoApi) {
+    bind(agentId: string, workspaceId: string, bindings: Binding[], paseo: PluginHandlerContext["paseo"]) {
       if (!bindings.length) {
         channels.get(agentId)?.close();
         channels.delete(agentId);
