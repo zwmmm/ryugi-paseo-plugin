@@ -1,5 +1,5 @@
 import type { PluginHandlerContext, PluginServerContext } from "@getpaseo/plugin/server";
-import { searchAttachmentsRpc, sessionDataRpc, workspaceChanges } from "./shared/contracts.js";
+import { sessionDataRpc, workspaceChanges } from "./shared/contracts.js";
 import { realRyugiBridge } from "./server/realRyugiBridge.js";
 import { createMonitorSessions } from "./server/monitorSessions.js";
 import { getPrivateRuntime } from "./server/privateRuntime.js";
@@ -23,20 +23,6 @@ export default function contribute(server: PluginServerContext) {
       signal.addEventListener("abort", () => { stop(); resolve(); }, { once: true });
       if (signal.aborted) { stop(); resolve(); }
     });
-  });
-  server.handle(searchAttachmentsRpc, async ({ query }, { paseo }) => {
-    const workspaces = [];
-    let cursor: string | undefined;
-    do {
-      const result = await paseo.workspaces.list({ page: { limit: 100, cursor } });
-      workspaces.push(...result.entries);
-      cursor = result.pageInfo.hasMore ? result.pageInfo.nextCursor ?? undefined : undefined;
-    } while (cursor);
-    return realRyugiBridge.searchComments(query, workspaces.map((workspace) => ({
-      id: workspace.id,
-      name: workspace.title || workspace.name,
-      projectDir: runtime.getProjectDir(workspace.workspaceDirectory || workspace.projectRootPath),
-    })));
   });
   const sessionData = async ({ agentId, workspaceId }: { agentId: string; workspaceId: string }, { paseo }: PluginHandlerContext) => {
     const workspace = paseo.workspaces.ref(workspaceId);

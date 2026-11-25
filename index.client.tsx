@@ -1,6 +1,7 @@
-import { openExternalUrl, type PluginButtonRegistration, type PluginClientContext } from "@getpaseo/plugin/client";
+import { openExternalUrl, type PluginButtonRegistration, type PluginText, type PluginClientContext } from "@getpaseo/plugin/client";
 import { MonitorNotice, monitorNoticeSchema, parseMonitorNotice } from "./client/MonitorNotice.js";
-import { ryugiAttachments, sessionDataRpc, workspaceChanges } from "./shared/contracts.js";
+import { messages } from "./client/messages.js";
+import { sessionDataRpc, workspaceChanges } from "./shared/contracts.js";
 
 export default function contribute(client: PluginClientContext) {
   const removeTransformer = client.addTimelineTransformer({
@@ -12,9 +13,8 @@ export default function contribute(client: PluginClientContext) {
     },
   });
   const removeRenderer = client.addTimelineRenderer({ kind: "ryugi-monitor-notice", version: 1, schema: monitorNoticeSchema, Component: MonitorNotice });
-  const removeSource = client.addAttachmentSource(ryugiAttachments);
   const lifetime = new AbortController();
-  const agents = new Map<string, { workspaceId: string; checking: boolean; pending: boolean; doc?: PluginButtonRegistration; art?: PluginButtonRegistration; docUrl?: string; artUrl?: string; stopWatch?: () => void }>();
+  const agents = new Map<string, { workspaceId: string; checking: boolean; pending: boolean; doc?: PluginButtonRegistration<PluginText>; art?: PluginButtonRegistration<PluginText>; docUrl?: string; artUrl?: string; stopWatch?: () => void }>();
   const remove = (id: string) => { const state = agents.get(id); state?.stopWatch?.(); state?.doc?.remove(); state?.art?.remove(); agents.delete(id); };
   const check = async (id: string) => {
     const state = agents.get(id);
@@ -26,7 +26,7 @@ export default function contribute(client: PluginClientContext) {
       if (lifetime.signal.aborted || agents.get(id) !== state) return;
       const register = (kind: "document" | "artboard") => client.addComposerPill({
         id: kind === "document" ? "ryugi-document" : "ryugi-artboard", workspaceId: state.workspaceId, agentId: id,
-        button: { title: kind === "document" ? "文档" : "画板", icon: kind === "document" ? "FileText" : "LayoutGrid", behavior: { kind: "action", onPress: () => { const url = kind === "document" ? state.docUrl : state.artUrl; if (url) return openExternalUrl(url); } } },
+        button: { title: messages.message(kind), icon: kind === "document" ? "FileText" : "LayoutGrid", behavior: { kind: "action", onPress: () => { const url = kind === "document" ? state.docUrl : state.artUrl; if (url) return openExternalUrl(url); } } },
       });
       state.docUrl = result.artifacts.find((x) => x.artifact.startsWith("document/"))?.url;
       state.artUrl = result.artifacts.find((x) => x.artifact.startsWith("artboard/"))?.url;
@@ -59,5 +59,5 @@ export default function contribute(client: PluginClientContext) {
     });
   }).catch((error) => { if (!lifetime.signal.aborted) console.error("[Ryugi] 会话订阅失败", error); });
   const timer = setInterval(() => { for (const id of agents.keys()) void check(id); }, 60000);
-  return () => { lifetime.abort(); clearInterval(timer); for (const id of agents.keys()) remove(id); removeSource(); removeTransformer(); removeRenderer(); };
+  return () => { lifetime.abort(); clearInterval(timer); for (const id of agents.keys()) remove(id); removeTransformer(); removeRenderer(); };
 }

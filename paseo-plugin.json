@@ -1,20 +1,20 @@
 {
   "id": "ryugi-paseo",
   "name": "Ryugi Monitor",
-  "description": "监听 Ryugi 反馈并通知对应 Paseo Agent 继续处理",
+  "description": "Listen for Ryugi feedback and notify the corresponding Paseo agent to continue",
   "requirements": {
     "paseo": ">=0.17.3"
   },
   "build": [
     [
-      "npm",
-      "install",
-      "--no-fund",
-      "--no-audit"
-    ],
-    [
       "node",
       "scripts/setup-runtime.mjs"
     ]
-  ]
+  ],
+  "translations": {
+    "zh-CN": {
+      "name": "Ryugi Monitor",
+      "description": "监听 Ryugi 反馈并通知对应 Paseo Agent 继续处理"
+    }
+  }
 }

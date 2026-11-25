@@ -1,6 +1,5 @@
 {
   "name": "ryugi-paseo-plugin",
-  "private": true,
   "version": "0.1.0",
   "files": [
     "paseo-plugin.json",
@@ -25,5 +24,14 @@
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "zod": "^4.4.3"
+  },
+  "description": "Isolated Ryugi workflows and feedback monitoring for Paseo",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zwmmm/ryugi-paseo-plugin.git"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }

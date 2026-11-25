@@ -1,8 +1,14 @@
 # Ryugi Monitor
 
-插件为 Paseo 会话提供隔离的 Ryugi 工件 CLI 和完整 workflow skills。Agent 创建工件后，评论、方案选择、问答提交及撤回通过本机 socket 通知对应 Agent 继续处理。传输确认不代表反馈已经处理。时间线中的 monitor 通知默认折叠为摘要，点击可展开原始内容；Agent 仍收到完整通知。
+插件为 Paseo 会话提供隔离的 Ryugi 工件 CLI 和完整 workflow skills。Agent 创建工件后，评论、方案选择、问答提交及撤回通过本机 socket 通知对应 Agent 继续处理。传输确认不代表反馈已经处理。时间线中的 monitor 通知默认折叠为摘要，点击可展开原始内容；Agent 仍收到完整通知。通知摘要和工件入口随 Paseo 语言在中英文间切换，其他语言回退英文；评论正文与原始通知保留原文。
 
-输入框上方仅在当前会话存在对应工件时显示文档、画板入口，点击直接打开工件地址。附件菜单可手动搜索“Ryugi 评论”。Agent 不自动打开或操作浏览器，不需要各 Agent 的 Ryugi hook 或 Paseo Hub Triggers。
+输入框上方仅在当前会话存在对应工件时显示文档、画板入口，点击直接打开工件地址。Agent 不自动打开或操作浏览器，不需要各 Agent 的 Ryugi hook 或 Paseo Hub Triggers。
+
+安装插件：
+
+```bash
+paseo plugin install npm:ryugi-paseo-plugin@0.1.0
+```
 
 需要 Paseo 0.17.3 及以上、Node.js、npm 和 Git。首次安装需要联网下载固定版本 `ryugi-artifacts@1.108.1` 与固定提交的 full skills；插件安装的 build 步骤自动准备运行时。本地目录开发先运行：
 
