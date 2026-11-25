@@ -7,7 +7,7 @@
 安装插件：
 
 ```bash
-paseo plugin install npm:ryugi-paseo-plugin@0.1.0
+paseo plugin install git:zwmmm/ryugi-paseo-plugin
 ```
 
 需要 Paseo 0.17.3 及以上、Node.js、npm 和 Git。首次安装需要联网下载固定版本 `ryugi-artifacts@1.108.1` 与固定提交的 full skills；插件安装的 build 步骤自动准备运行时。本地目录开发先运行：
@@ -26,3 +26,5 @@ npm test
 新建会话可直接说：“开发一个新需求：……”或“设计一个新功能：……”。插件重载后，空闲会话会在下次发送消息前重新打开并获得工具和指令，正在执行的轮次不会被打断。原用户 Ryugi 的工件不会自动迁移到私有目录。
 
 会话绑定来自工具启动工件及 Agent 实际交付的本机地址。同一工件被多个会话引用时，各绑定会话都会接收通知。客户端退出不会停止已有 monitor；插件重载后在会话恢复、完成一轮或界面同步时重建绑定。文档、画板入口由文件事件刷新，60 秒查询仅作入口刷新兜底，反馈通知通过 socket 主动推送。
+
+Ryugi Monitor 是面向 Paseo 的独立集成。Ryugi 工件工具、工作流和标识来自 [Innei/ryugi](https://github.com/Innei/ryugi)。

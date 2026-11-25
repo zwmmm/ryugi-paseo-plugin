@@ -1,7 +1,7 @@
 {
   "id": "ryugi-paseo",
   "name": "Ryugi Monitor",
-  "description": "Listen for Ryugi feedback and notify the corresponding Paseo agent to continue",
+  "description": "Open Ryugi documents and artboards from Paseo and send feedback back to the Agent session that created them.",
   "requirements": {
     "paseo": ">=0.17.3"
   },
@@ -14,7 +14,12 @@
   "translations": {
     "zh-CN": {
       "name": "Ryugi Monitor",
-      "description": "监听 Ryugi 反馈并通知对应 Paseo Agent 继续处理"
+      "description": "在 Paseo 打开 Ryugi 文档和画板，让反馈回到创建工件的 Agent 会话。"
     }
-  }
+  },
+  "icon": "assets/ryugi-icon.png",
+  "media": [
+    "assets/ryugi-cover.png",
+    "assets/ryugi-demo.mp4"
+  ]
 }

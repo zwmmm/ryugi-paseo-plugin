@@ -100,7 +100,10 @@ test("安装固定版本，禁用 npm scripts/git hooks，并可重复执行", a
   };
   try {
     assert.equal(setupRuntime({ runtimeDir: dir, run }), dir);
-    assert.deepEqual(calls.find((call) => call.command === "npm").args, ["install", "--prefix", dir, "--ignore-scripts", "--no-audit", "--no-fund", `ryugi-artifacts@${RYUGI_VERSION}`]);
+    assert.deepEqual(calls.find((call) => call.command === "npm").args, ["ci", "--prefix", dir, "--ignore-scripts", "--no-audit", "--no-fund"]);
+    const lock = JSON.parse(fs.readFileSync(path.join(dir, "package-lock.json"), "utf8"));
+    assert.equal(lock.packages["node_modules/ryugi-artifacts"].version, RYUGI_VERSION);
+    assert.match(lock.packages["node_modules/ryugi-artifacts"].integrity, /^sha512-/);
     assert.ok(calls.some((call) => call.args.includes("fetch") && call.args.includes(RYUGI_WORKFLOW_COMMIT)));
     const before = calls.length;
     setupRuntime({ runtimeDir: dir, run });

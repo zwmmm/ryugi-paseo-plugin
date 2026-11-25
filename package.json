@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "files": [
     "paseo-plugin.json",
+    "OVERVIEW.md",
+    "OVERVIEW.zh-CN.md",
+    "assets/",
     "index.client.tsx",
     "index.server.ts",
     "client/",
@@ -25,7 +28,7 @@
     "typescript": "^5.9.3",
     "zod": "^4.4.3"
   },
-  "description": "Isolated Ryugi workflows and feedback monitoring for Paseo",
+  "description": "Open Ryugi documents and artboards from Paseo and send feedback back to the Agent session that created them.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/zwmmm/ryugi-paseo-plugin.git"

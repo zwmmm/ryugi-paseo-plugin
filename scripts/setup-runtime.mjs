@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 export const RYUGI_VERSION = "1.108.1";
 export const RYUGI_WORKFLOW_COMMIT = "6f5b4cc70c0493f4848a8ec1fa090258389eff08";
 const repository = "https://github.com/Innei/ryugi.git";
+const runtimeManifestDir = new URL("./runtime/", import.meta.url);
 
 export function setupRuntime({
   runtimeDir = process.env.PASEO_RYUGI_RUNTIME_DIR || path.join(os.homedir(), ".paseo", "ryugi-runtime", RYUGI_VERSION),
@@ -22,7 +23,10 @@ export function setupRuntime({
     } catch { return false; }
   };
   if (!packageReady()) {
-    run("npm", ["install", "--prefix", runtimeDir, "--ignore-scripts", "--no-audit", "--no-fund", `ryugi-artifacts@${RYUGI_VERSION}`]);
+    for (const file of ["package.json", "package-lock.json"]) {
+      fs.copyFileSync(new URL(file, runtimeManifestDir), path.join(runtimeDir, file));
+    }
+    run("npm", ["ci", "--prefix", runtimeDir, "--ignore-scripts", "--no-audit", "--no-fund"]);
   }
   if (!packageReady()) throw new Error("Ryugi artifacts 安装结果不完整或版本不匹配");
   const workflowDir = path.join(runtimeDir, "workflow");
