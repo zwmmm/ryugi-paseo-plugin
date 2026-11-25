@@ -26,7 +26,7 @@ export function parseMonitorNotice(text: string): Notice | undefined {
   return {
     type: header[1] as Notice["type"],
     withdrawn: event.withdrawn === true,
-    count: Number.isSafeInteger(count) && count > 0 ? count : undefined,
+    ...(Number.isSafeInteger(count) && count > 0 ? { count } : {}),
     text,
   };
 }

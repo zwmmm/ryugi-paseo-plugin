@@ -43,6 +43,12 @@ test('摘要区分评论、方案、问答与撤回，保留完整通知', () =>
   }
 });
 
+test('无计数的方案通知可作为 Paseo 时间线数据传递', () => {
+  const text = notice('ryugi-choices', { round: 'round-one', groups: 1, submit: 'submission-id' });
+  const data = parseMonitorNotice(text);
+  assert.deepEqual(data, { type: 'ryugi-choices', withdrawn: false, text });
+});
+
 test('通知默认折叠，悬停显示箭头，点击展开原文并可再次收起', () => {
   state = [];
   locale = 'zh-CN';
