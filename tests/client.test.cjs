@@ -3,13 +3,14 @@ const Module = require("node:module");
 const test = require("node:test");
 const { PluginTranslationRuntime } = require("@getpaseo/plugin/client/host");
 
-test("插件设置控制工件打开方式，并在同一行显示 Ryugi 版本和更新操作", async () => {
+test("插件在同一个设置页提供浏览器、远程访问和 Ryugi 更新设置", async () => {
   const load = Module._load;
   const external = [];
   const opened = [];
   const remoteCalls = [];
   const originalFetch = global.fetch;
   let probe;
+  let browserState = { status: "ready" };
   let renderingDesign = false;
   let designStatus;
   let onRuntimeStatus;
@@ -22,7 +23,7 @@ test("插件设置控制工件打开方式，并在同一行显示 Ryugi 版本�
         ? [designStatus, (status) => { designStatus = status; }]
         : [initial, () => {}],
     };
-    if (name === "@getpaseo/plugin/client/ui") return { Icon: "Icon", ExternalLink: "ExternalLink", SettingsCard: "SettingsCard", SettingsSelect: "SettingsSelect", SettingsAction: "SettingsAction" };
+    if (name === "@getpaseo/plugin/client/ui") return { Icon: "Icon", ExternalLink: "ExternalLink", SettingsCard: "SettingsCard", SettingsSelect: "SettingsSelect", SettingsAction: "SettingsAction", SettingsSection: "SettingsSection" };
     if (name === "react-native") return { Pressable: "Pressable", Text: "Text", View: "View", StyleSheet: { create: (styles) => styles } };
     if (name === "@getpaseo/plugin/client") return {
       ...load.call(this, name, ...args),
@@ -35,7 +36,7 @@ test("插件设置控制工件打开方式，并在同一行显示 Ryugi 版本�
         return { status: "live" };
       },
       useSettings: (definition) => ({
-        status: "ready", values: definition.schema.parse({}), revision: "current", saving: false,
+        values: definition.schema.parse({}), revision: "current", saving: false, ...browserState,
         save: async (values, revision) => { saved.push({ values, revision }); onBrowserChange?.(values); return true; },
       }),
     };
@@ -137,7 +138,27 @@ test("插件设置控制工件打开方式，并在同一行显示 Ryugi 版本�
     assert.equal(fallback.props.children.props.href, 'http://localhost/html/updated-id?key=new');
     assert.equal(opened.length, 10);
     assert.deepEqual(external, []);
-    const { children: select } = settingsScreens.get("browser").Component({ theme: { colors: { foreground: "#000" } } }).props;
+    assert.deepEqual([...settingsScreens.keys()], ["design"]);
+    const design = settingsScreens.get("design");
+    const designProps = { theme: { colors: { foreground: "#000" } } };
+    const settingsPage = design.Component(designProps);
+    assert.equal(settingsPage.type, Symbol.for("react.fragment"), "由 Paseo 原生分组负责设置页布局");
+    const settingsContent = settingsPage.props.children;
+    assert.equal(settingsContent.length, 2, "设置页应使用一致的原生分组");
+    const [generalSection, remoteSection] = settingsContent;
+    assert.equal(generalSection.props.title, "settings.general");
+    const generalCard = generalSection.props.children;
+    assert.equal(generalCard.type, "SettingsCard");
+    const [versionSettings, browserSettings] = generalCard.props.children;
+    assert.equal(remoteSection.props.title, "remote.title");
+    assert.equal(remoteSection.props.children.type.name, "RemoteAccessSettings");
+    const renderBrowser = () => browserSettings.type(browserSettings.props);
+    browserState = { status: "loading" };
+    const loadingBrowser = renderBrowser();
+    assert.equal(loadingBrowser?.props?.label, "browser.openWith", "等待宿主响应时也应显示打开方式");
+    assert.equal(loadingBrowser.props.disabled, true);
+    browserState = { status: "ready" };
+    const select = renderBrowser();
     assert.equal(select.props.value, "paseo");
     await select.props.onValueChange("system");
     assert.deepEqual(saved, [{ values: { browser: "system" }, revision: "current" }]);
@@ -166,16 +187,17 @@ test("插件设置控制工件打开方式，并在同一行显示 Ryugi 版本�
     observer.update({ type: 'agent_update', payload: { kind: 'remove', agentId: 'agent' } });
     assert.equal(active.size, 0);
 
-    const design = settingsScreens.get("design");
-    assert.ok(design, "插件应注册设计设置页面");
     locale = "zh-CN";
-    assert.equal(runtime.resolve(design.title), "设计");
+    assert.equal(runtime.resolve(design.title), "设置");
     renderingDesign = true;
-    const renderDesign = () => design.Component({}).props.children;
+    assert.deepEqual(design.Component(designProps).props.children.map(({ props }) => props.title), ["常规", "远程访问"]);
+    assert.equal(renderBrowser().props.label, "工件浏览器");
+    const renderDesign = () => versionSettings.type(versionSettings.props);
     assert.equal(renderDesign().props.disabled, true);
     onRuntimeStatus({ version: "1.108.1", phase: "idle" });
     const cell = renderDesign();
     assert.equal(cell.type, "SettingsAction");
+    assert.equal(cell.props.label, "Ryugi 运行时");
     assert.match(cell.props.hint, /1\.108\.1/);
     assert.equal(cell.props.actionLabel, "手动更新");
     await cell.props.onPress();
@@ -189,5 +211,19 @@ test("插件设置控制工件打开方式，并在同一行显示 Ryugi 版本�
     onRuntimeStatus({ version: "1.200.0", phase: "failed" });
     assert.match(renderDesign().props.error, /更新 Ryugi 失败/);
     assert.equal(renderDesign().props.disabled, false);
+
+    browserState = { status: "error", error: "Connection closed" };
+    assert.equal(renderBrowser().props.error, "无法读取设置，请重试。");
+    assert.equal(renderBrowser().props.actionLabel, "重试");
+    browserState = { status: "ready", saveError: "Settings revision conflict" };
+    assert.equal(renderBrowser().props.error, "无法保存设置，请重试。");
+    locale = "en";
+    assert.deepEqual(design.Component(designProps).props.children.map(({ props }) => props.title), ["General", "Remote access"]);
+    assert.equal(renderBrowser().props.label, "Artifact browser");
+    assert.equal(renderDesign().props.label, "Ryugi runtime");
+    assert.equal(renderBrowser().props.error, "Could not save the settings. Try again.");
+    browserState = { status: "invalid", error: "已保存的设置无效" };
+    assert.equal(renderBrowser().props.error, "The saved settings are invalid. Restore the defaults to continue.");
+    assert.equal(renderBrowser().props.actionLabel, "Restore defaults");
   } finally { global.fetch = originalFetch; cleanup(); }
 });

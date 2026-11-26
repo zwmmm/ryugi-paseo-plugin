@@ -105,7 +105,7 @@ export default function contribute(server: PluginServerContext) {
     const generation = tunnelGeneration;
     const settings = await remoteSettings.read();
     if (settings.status !== "ready" || !settings.values.password) {
-      throw new Error("请先在 Ryugi 插件的「远程访问工件」里设置访问密码。");
+      throw new Error("请先在 Ryugi 插件的「远程访问」里设置访问密码。");
     }
     const url = await resolveUrl();
     if (disposed || generation !== tunnelGeneration) throw new Error("Ryugi tunnel was closed. Open it again to start a new tunnel.");

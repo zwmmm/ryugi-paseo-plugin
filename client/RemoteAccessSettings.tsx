@@ -1,11 +1,10 @@
-import { useRpc, useSettings, useSubscription, useTranslation, type PluginSurfaceProps } from "@getpaseo/plugin/client";
+import { useRpc, useSettings, useSubscription, useTranslation } from "@getpaseo/plugin/client";
 import { SettingsAction, SettingsCard, SettingsInput } from "@getpaseo/plugin/client/ui";
 import { useEffect, useRef, useState } from "react";
-import { Text } from "react-native";
 import { remoteAccessSettings, remotePassword, startTunnelRpc, stopTunnelRpc, tunnelStatus } from "../shared/remoteAccess.js";
 import { messages } from "./messages.js";
 
-export function RemoteAccessSettings({ theme }: PluginSurfaceProps) {
+export function RemoteAccessSettings() {
   const settings = useSettings(remoteAccessSettings);
   const { t } = useTranslation(messages);
   const startTunnel = useRpc(startTunnelRpc);
@@ -18,6 +17,7 @@ export function RemoteAccessSettings({ theme }: PluginSurfaceProps) {
   const attempted = useRef<typeof draft>(undefined);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const { save, saving } = settings;
+  const saveError = settings.saveError ? t("settings.saveFailed") : undefined;
   const revision = settings.status === "ready" ? settings.revision : undefined;
   const savedPassword = settings.status === "ready" ? settings.values.password : undefined;
   const valid = !draft || remotePassword.safeParse(draft.password).success;
@@ -35,14 +35,18 @@ export function RemoteAccessSettings({ theme }: PluginSurfaceProps) {
       });
     }, 400);
   }, [draft, revision, save, savedPassword, saving, valid]);
-  if (settings.status === "loading") return <Text style={{ color: theme.colors.foreground }}>{t("remote.loading")}</Text>;
-  if (settings.status !== "ready") {
+  const loading = settings.status === "loading";
+  if (!loading && settings.status !== "ready") {
+    const invalid = settings.status === "invalid";
     return (
       <SettingsCard>
-        <Text accessibilityRole="alert" style={{ color: theme.colors.foreground }}>{settings.error}</Text>
-        {settings.status === "invalid"
-          ? <SettingsAction label={t("remote.title")} actionLabel={t("browser.reset")} disabled={settings.saving} onPress={settings.reset} />
-          : <SettingsAction label={t("remote.title")} actionLabel={t("browser.reload")} onPress={settings.reload} />}
+        <SettingsAction
+          label={t("remote.password")}
+          actionLabel={t(invalid ? "settings.reset" : "settings.retry")}
+          error={saveError ?? t(invalid ? "settings.invalid" : "settings.loadFailed")}
+          disabled={saving}
+          onPress={invalid ? settings.reset : settings.reload}
+        />
       </SettingsCard>
     );
   }
@@ -50,22 +54,28 @@ export function RemoteAccessSettings({ theme }: PluginSurfaceProps) {
   const passwordReady = Boolean(savedPassword) && !saving && (!draft || draft.password === savedPassword);
   const tunnelHint = pending === "start" ? "remote.startingTunnel"
     : pending === "stop" ? "remote.stoppingTunnel"
+    : loading ? "settings.loading"
     : active === undefined ? "remote.checkingTunnel"
     : active ? "remote.tunnelActive"
     : !passwordReady ? "remote.passwordRequired"
     : "remote.tunnelIdle";
+  const tunnelDisabled = loading || active === undefined || Boolean(pending) || tunnelError || (!active && !passwordReady);
   return (
     <SettingsCard>
       <SettingsInput
+        key={settings.status}
         label={t("remote.password")}
         hint={t("remote.hint")}
-        initialValue={settings.values.password}
-        error={valid ? settings.saveError : t("remote.passwordTooLong")}
-        disabled={saving}
-        onChangeText={(password) => setDraft((previous) => ({
-          password,
-          revision: previous && previous !== attempted.current ? previous.revision : settings.revision,
-        }))}
+        initialValue={savedPassword}
+        error={valid ? saveError : t("remote.passwordTooLong")}
+        disabled={loading || saving}
+        onChangeText={(password) => {
+          if (revision === undefined) return;
+          setDraft((previous) => ({
+            password,
+            revision: previous && previous !== attempted.current ? previous.revision : revision,
+          }));
+        }}
         secureTextEntry
       />
       <SettingsAction
@@ -73,8 +83,9 @@ export function RemoteAccessSettings({ theme }: PluginSurfaceProps) {
         actionLabel={t(active ? "remote.stop" : "remote.start")}
         hint={tunnelError ? undefined : t(tunnelHint)}
         error={tunnelError ? t("remote.tunnelUnavailable") : actionError ? t(actionError) : undefined}
-        disabled={active === undefined || Boolean(pending) || tunnelError || (!active && !passwordReady)}
+        disabled={tunnelDisabled}
         onPress={async () => {
+          if (tunnelDisabled) return;
           setPending(active ? "stop" : "start");
           setActionError(undefined);
           try {

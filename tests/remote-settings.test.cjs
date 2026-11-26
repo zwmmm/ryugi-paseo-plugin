@@ -2,11 +2,12 @@ const assert = require("node:assert/strict");
 const Module = require("node:module");
 const test = require("node:test");
 
-test("连续输入只自动保存最后一个密码，清空也自动保存", async (t) => {
+test("密码与隧道控件在加载时可见，密码加载后可编辑并自动保存", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const load = Module._load;
   const saves = [];
-  let settings = { status: "ready", values: { password: "old" }, revision: "1", saving: false };
+  const initial = { status: "ready", values: { password: "old" }, revision: "1", saving: false };
+  let settings = { status: "loading", saving: false };
   const save = async (values, revision) => { saves.push({ values, revision }); return true; };
   const states = [];
   let stateIndex = 0;
@@ -66,11 +67,23 @@ test("连续输入只自动保存最后一个密码，清空也自动保存", as
     assert.ok(Array.isArray(view.props.children), "settings shows input and tunnel control");
     const [input, action] = view.props.children;
     assert.equal(input.type, "Input");
-    return { ...input.props, action: action.props };
+    return { ...input.props, inputKey: input.key, action: action.props };
   };
+  const loading = render();
+  assert.equal(loading.label, "remote.password");
+  assert.equal(loading.hint, "remote.hint");
+  assert.equal(loading.disabled, true);
+  assert.equal(loading.action.label, "remote.tunnel");
+  assert.equal(loading.action.disabled, true);
+  onStatus({ active: true });
   assert.equal(render().action.disabled, true);
+
+  settings = initial;
+  const ready = render();
+  assert.equal(ready.initialValue, "old");
+  assert.equal(ready.disabled, false);
+  assert.notEqual(ready.inputKey, loading.inputKey, "真实值应重新初始化密码输入框");
   onStatus({ active: false });
-  const initial = settings;
   settings = { ...settings, values: { password: "" } };
   assert.equal(render().action.actionLabel, "remote.start");
   assert.equal(render().action.disabled, true);
@@ -107,7 +120,12 @@ test("连续输入只自动保存最后一个密码，清空也自动保存", as
   t.mock.timers.tick(500);
   assert.deepEqual(saves.at(-1), { values: { password: "local draft complete" }, revision: "3" });
 
-  settings = { ...settings, saving: true };
+  settings = { ...settings, saving: true, saveError: "Settings revision conflict" };
   assert.equal(render().disabled, true);
+  assert.equal(render().error, "settings.saveFailed");
+  settings = { status: "error", saving: false, error: "Connection closed" };
+  const recovery = Component({ theme: { colors: { foreground: "#000" } } }).props.children;
+  assert.equal(recovery.props.error, "settings.loadFailed");
+  assert.equal(recovery.props.actionLabel, "settings.retry");
   cleanups.forEach((cleanup) => cleanup?.());
 });
