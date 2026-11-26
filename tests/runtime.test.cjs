@@ -115,3 +115,67 @@ test("安装固定版本，禁用 npm scripts/git hooks，并可重复执行", a
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("手动更新同时启用新 CLI 和工作流，并保留原有工件及服务状态", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ryugi-update-test-"));
+  const previous = process.env.PASEO_RYUGI_RUNTIME_DIR;
+  const release = "1.200.0";
+  let socketDir;
+  let breakWorkflow = true;
+  let publishedVersion = release;
+  let installs = 0;
+  const run = async (command, args, cwd) => {
+    if (command === "npm" && args[0] === "view") return JSON.stringify(publishedVersion);
+    if (command === "npm") {
+      installs++;
+      assert.ok(args.includes(`ryugi-artifacts@${release}`));
+      assert.ok(args.includes("--ignore-scripts"));
+      fixture(cwd);
+      fs.writeFileSync(path.join(cwd, "node_modules/ryugi-artifacts/package.json"), JSON.stringify({ version: release }));
+      assert.equal(getPrivateRuntime().version, "1.108.1", "安装期间继续使用旧版本");
+    } else if (args.includes("fetch")) {
+      assert.ok(args.includes(`refs/tags/v${release}`));
+      if (breakWorkflow) throw new Error("fetch failed");
+    }
+    return "";
+  };
+  try {
+    fixture(dir);
+    process.env.PASEO_RYUGI_RUNTIME_DIR = dir;
+    const original = getPrivateRuntime();
+    socketDir = original.env.RYUGI_RUNTIME_DIR;
+    assert.equal(original.version, "1.108.1");
+    const { updatePrivateRuntime } = require("../server/runtimeUpdate.ts");
+    const workspace = path.join(dir, "workspace");
+    const project = original.getProjectDir(workspace);
+    const artifact = path.join(project, "existing.txt");
+    fs.writeFileSync(artifact, "original artifact");
+
+    await assert.rejects(updatePrivateRuntime(dir, new AbortController().signal, run), /fetch failed/);
+    assert.equal(getPrivateRuntime().cliPath, original.cliPath);
+    assert.deepEqual(fs.readdirSync(path.join(dir, "releases")), []);
+
+    breakWorkflow = false;
+    assert.equal(await updatePrivateRuntime(dir, new AbortController().signal, run), "updated");
+    const updated = getPrivateRuntime();
+    assert.equal(updated.version, release);
+    assert.equal(updated.cliPath, path.join(dir, "releases", release, "node_modules/ryugi-artifacts/dist/cli.cjs"));
+    assert.equal(updated.skillsDir, path.join(dir, "releases", release, "workflow/skills"));
+    assert.equal(updated.serverHome, original.serverHome);
+    assert.equal(updated.socketPath, original.socketPath);
+    assert.equal(updated.getProjectDir(workspace), project);
+    assert.equal(fs.readFileSync(artifact, "utf8"), "original artifact");
+    assert.ok(fs.existsSync(original.cliPath), "已打开的会话仍可使用原运行时");
+
+    assert.equal(await updatePrivateRuntime(dir, new AbortController().signal, run), "current");
+    publishedVersion = "1.108.1";
+    assert.equal(await updatePrivateRuntime(dir, new AbortController().signal, run), "current");
+    assert.equal(installs, 2);
+    assert.equal(getPrivateRuntime().version, release);
+  } finally {
+    if (previous === undefined) delete process.env.PASEO_RYUGI_RUNTIME_DIR;
+    else process.env.PASEO_RYUGI_RUNTIME_DIR = previous;
+    fs.rmSync(dir, { recursive: true, force: true });
+    if (socketDir) fs.rmSync(socketDir, { recursive: true, force: true });
+  }
+});

@@ -7,6 +7,7 @@ import { RemoteAccessSettings } from "./client/RemoteAccessSettings.js";
 import { canOpenLocally } from "./client/artifactUrl.js";
 import { remoteArtifactRpc } from "./shared/remoteAccess.js";
 import { BrowserSettings } from "./client/BrowserSettings.js";
+import { DesignSettings } from "./client/DesignSettings.js";
 import { messages } from "./client/messages.js";
 import { sessionDataRpc, workspaceChanges } from "./shared/contracts.js";
 import { artifactTypes, type ArtifactType } from "./shared/artifacts.js";
@@ -49,6 +50,7 @@ export default function contribute(client: PluginClientContext) {
 
   const removeBrowserScreen = client.addScreen({ id: "artifact-browser", title: "Ryugi", Component: ArtifactBrowser });
   const removeRemoteSettings = client.addSettingsScreen({ id: "remote-access", title: messages.message("remote.title"), icon: "Globe", Component: RemoteAccessSettings });
+  const removeDesignSettings = client.addSettingsScreen({ id: "design", title: messages.message("runtime.settings"), icon: "Palette", Component: DesignSettings });
   const removeBrowserSettings = client.addSettingsScreen({ id: "browser", title: messages.message("browser.openWith"), icon: "Globe", Component: BrowserSettings });
   const removeTransformer = client.addTimelineTransformer({
     id: "ryugi-monitor-notice",
@@ -128,5 +130,5 @@ export default function contribute(client: PluginClientContext) {
     });
   }).catch((error) => { if (!lifetime.signal.aborted) console.error("[Ryugi] 会话订阅失败", error); });
   const timer = setInterval(() => { for (const id of agents.keys()) void check(id); }, 60000);
-  return () => { lifetime.abort(); clearInterval(timer); for (const id of agents.keys()) remove(id); removeTransformer(); removeRenderer(); removeBrowserScreen(); removeBrowserSettings(); removeRemoteSettings(); };
+  return () => { lifetime.abort(); clearInterval(timer); for (const id of agents.keys()) remove(id); removeTransformer(); removeRenderer(); removeBrowserScreen(); removeBrowserSettings(); removeDesignSettings(); removeRemoteSettings(); };
 }

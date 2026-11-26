@@ -3,21 +3,37 @@ const Module = require("node:module");
 const test = require("node:test");
 const { PluginTranslationRuntime } = require("@getpaseo/plugin/client/host");
 
-test("工件入口根据插件设置打开内置浏览器或系统默认浏览器", async () => {
+test("插件设置控制工件打开方式，并在同一行显示 Ryugi 版本和更新操作", async () => {
   const load = Module._load;
   const external = [];
   const opened = [];
   const remoteCalls = [];
   const originalFetch = global.fetch;
   let probe;
+  let renderingDesign = false;
+  let designStatus;
+  let onRuntimeStatus;
+  const runtimeCalls = [];
   Module._load = function (name, ...args) {
-    if (name === "react") return { ...load.call(this, name, ...args), useEffect: (effect) => effect(), useState: (initial) => [initial, () => {}] };
-    if (name === "@getpaseo/plugin/client/ui") return { Icon: "Icon", ExternalLink: "ExternalLink", SettingsCard: "SettingsCard", SettingsSelect: "SettingsSelect" };
+    if (name === "react") return {
+      ...load.call(this, name, ...args),
+      useEffect: (effect) => effect(),
+      useState: (initial) => renderingDesign && initial === undefined
+        ? [designStatus, (status) => { designStatus = status; }]
+        : [initial, () => {}],
+    };
+    if (name === "@getpaseo/plugin/client/ui") return { Icon: "Icon", ExternalLink: "ExternalLink", SettingsCard: "SettingsCard", SettingsSelect: "SettingsSelect", SettingsAction: "SettingsAction" };
     if (name === "react-native") return { Pressable: "Pressable", Text: "Text", View: "View", StyleSheet: { create: (styles) => styles } };
     if (name === "@getpaseo/plugin/client") return {
       ...load.call(this, name, ...args),
       openExternalUrl: async (url) => external.push(url),
-      useTranslation: () => ({ t: (key) => key }),
+      useTranslation: (messages) => ({ t: (key, values) => renderingDesign ? runtime.resolve(messages.message(key, values)) : key }),
+      useRpc: (contract) => async () => { runtimeCalls.push(contract.name); },
+      useSubscription: (contract, _input, onEvent) => {
+        assert.equal(contract.name, "ryugi.runtime-update-status");
+        onRuntimeStatus = onEvent;
+        return { status: "live" };
+      },
       useSettings: (definition) => ({
         status: "ready", values: definition.schema.parse({}), revision: "current", saving: false,
         save: async (values, revision) => { saved.push({ values, revision }); onBrowserChange?.(values); return true; },
@@ -30,7 +46,7 @@ test("工件入口根据插件设置打开内置浏览器或系统默认浏览�
   let observer;
   let onChange;
   let onBrowserChange;
-  let settingsScreen;
+  const settingsScreens = new Map();
   const saved = [];
   let pill;
   const active = new Set();
@@ -51,7 +67,7 @@ test("工件入口根据插件设置打开内置浏览器或系统默认浏览�
   let locale = "en";
   const runtime = new PluginTranslationRuntime({ getLocale: () => locale, subscribe: () => () => {} });
   const client = {
-    addSettingsScreen: (value) => { settingsScreen = value; return () => {}; },
+    addSettingsScreen: (value) => { settingsScreens.set(value.id, value); return () => {}; },
     addScreen: (value) => { screen = value; return () => {}; },
     openScreen: (value) => { route = value; renderScreen(desktop); },
     addTimelineTransformer: (value) => { transformer = value; return () => {}; },
@@ -121,8 +137,7 @@ test("工件入口根据插件设置打开内置浏览器或系统默认浏览�
     assert.equal(fallback.props.children.props.href, 'http://localhost/html/updated-id?key=new');
     assert.equal(opened.length, 10);
     assert.deepEqual(external, []);
-    assert.ok(settingsScreen, "插件应注册浏览器设置页面");
-    const { children: select } = settingsScreen.Component({ theme: { colors: { foreground: "#000" } } }).props;
+    const { children: select } = settingsScreens.get("browser").Component({ theme: { colors: { foreground: "#000" } } }).props;
     assert.equal(select.props.value, "paseo");
     await select.props.onValueChange("system");
     assert.deepEqual(saved, [{ values: { browser: "system" }, revision: "current" }]);
@@ -150,5 +165,29 @@ test("工件入口根据插件设置打开内置浏览器或系统默认浏览�
     assert.equal(external.at(-1), "https://client-test.trycloudflare.com/html/updated-id?key=new");
     observer.update({ type: 'agent_update', payload: { kind: 'remove', agentId: 'agent' } });
     assert.equal(active.size, 0);
+
+    const design = settingsScreens.get("design");
+    assert.ok(design, "插件应注册设计设置页面");
+    locale = "zh-CN";
+    assert.equal(runtime.resolve(design.title), "设计");
+    renderingDesign = true;
+    const renderDesign = () => design.Component({}).props.children;
+    assert.equal(renderDesign().props.disabled, true);
+    onRuntimeStatus({ version: "1.108.1", phase: "idle" });
+    const cell = renderDesign();
+    assert.equal(cell.type, "SettingsAction");
+    assert.match(cell.props.hint, /1\.108\.1/);
+    assert.equal(cell.props.actionLabel, "手动更新");
+    await cell.props.onPress();
+    assert.deepEqual(runtimeCalls, ["ryugi.start-runtime-update"]);
+    onRuntimeStatus({ version: "1.108.1", phase: "updating" });
+    assert.equal(renderDesign().props.disabled, true);
+    onRuntimeStatus({ version: "1.200.0", phase: "updated" });
+    assert.match(renderDesign().props.hint, /1\.200\.0/);
+    onRuntimeStatus({ version: "1.200.0", phase: "current" });
+    assert.match(renderDesign().props.hint, /已是最新版本/);
+    onRuntimeStatus({ version: "1.200.0", phase: "failed" });
+    assert.match(renderDesign().props.error, /更新 Ryugi 失败/);
+    assert.equal(renderDesign().props.disabled, false);
   } finally { global.fetch = originalFetch; cleanup(); }
 });

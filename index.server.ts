@@ -9,6 +9,7 @@ import { browserChanges, browserSettings, defaultArtifactBrowser } from "./share
 import { realRyugiBridge } from "./server/realRyugiBridge.js";
 import { createMonitorSessions } from "./server/monitorSessions.js";
 import { getPrivateRuntime } from "./server/privateRuntime.js";
+import { registerRuntimeUpdates } from "./server/runtimeUpdate.js";
 import { ryugiInstructions, createRyugiTool } from "./server/workflowIntegration.js";
 import { watchArtifacts } from "./server/watchArtifacts.js";
 
@@ -32,6 +33,7 @@ export default function contribute(server: PluginServerContext) {
     }
   });
   const runtime = getPrivateRuntime();
+  const stopRuntimeUpdates = registerRuntimeUpdates(server, runtime.runtimeDir);
   const remoteSettings = server.registerSettings(remoteAccessSettings);
   const localProbe = createLocalProbe();
   const tunnel = createQuickTunnel(path.join(runtime.runtimeDir, "bin", process.platform === "win32" ? "cloudflared.exe" : "cloudflared"));
@@ -133,16 +135,17 @@ export default function contribute(server: PluginServerContext) {
     const workspace = context.paseo.workspaces.ref(request.workspaceId);
     const ws = workspace.current() || await workspace.refresh();
     if (!ws) throw new Error("Ryugi 工作区不可用");
-    const projectDir = runtime.getProjectDir(ws.workspaceDirectory || ws.projectRootPath);
+    const sessionRuntime = getPrivateRuntime();
+    const projectDir = sessionRuntime.getProjectDir(ws.workspaceDirectory || ws.projectRootPath);
     setTimeout(() => refresh(request.agentId, request.workspaceId, context), 0);
-    const tool = createRyugiTool(runtime, projectDir, async (output) => {
+    const tool = createRyugiTool(sessionRuntime, projectDir, async (output) => {
       const artifacts = await realRyugiBridge.sessionArtifacts(projectDir, [output]);
       const existing = openedArtifacts.get(request.agentId) || [];
       const merged = [...new Map([...existing, ...artifacts].map((a) => [a.artifact, a])).values()];
       openedArtifacts.set(request.agentId, merged);
       if (!disposed) monitors.bind(request.agentId, request.workspaceId!, merged.map(({ artifact }) => ({ project: projectDir, artifact })), context.paseo);
     });
-    return { ...request, tools: [...request.tools, tool], appendSystemPrompt: [...(request.appendSystemPrompt || []), ryugiInstructions(runtime, projectDir, request.cwd)] };
+    return { ...request, tools: [...request.tools, tool], appendSystemPrompt: [...(request.appendSystemPrompt || []), ryugiInstructions(sessionRuntime, projectDir, request.cwd)] };
   });
-  return async () => { disposed = true; localProbe.close(); tunnel.stop(); await unsubscribeRemote(); removeTurnHook(); removeArchiveHook(); removeOpenHook(); monitors.close(); };
+  return async () => { disposed = true; stopRuntimeUpdates(); localProbe.close(); tunnel.stop(); await unsubscribeRemote(); removeTurnHook(); removeArchiveHook(); removeOpenHook(); monitors.close(); };
 }
