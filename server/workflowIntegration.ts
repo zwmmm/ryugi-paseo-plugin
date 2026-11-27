@@ -8,17 +8,19 @@ import type { getPrivateRuntime } from "./privateRuntime.js";
 
 const exec = promisify(execFile);
 type Runtime = ReturnType<typeof getPrivateRuntime>;
-const commands = new Set(["start", "check", "get", "comment", "changes", "scene", "modules", "report", "storyboard", "publish", "pull"]);
+const commands = new Set(["start", "check", "get", "comment", "changes", "scene", "modules", "report", "storyboard", "publish", "pull", "preview"]);
 
 export function ryugiInstructions(runtime: Runtime, projectDir: string, cwd: string) {
   const skills = fs.readdirSync(runtime.skillsDir).filter((name) => fs.existsSync(path.join(runtime.skillsDir, name, "SKILL.md")));
+  const entrySkill = fs.existsSync(path.join(runtime.skillsDir, "using-adeck", "SKILL.md")) ? "using-adeck" : "using-ryugi";
+  const skillPrefix = entrySkill === "using-adeck" ? "adeck" : "ryugi";
   return [
-    "Ryugi is built into this Paseo session. It is a local artifact tool, not an external MCP service. Use the ryugi tool supplied in this session for artifact CLI operations.",
-    "At the start of each conversation, read using-ryugi/SKILL.md and follow its task routing, then read the stage skills it selects. The user does not need to mention Ryugi: new requirements, design, implementation and debugging enter the appropriate workflow automatically. Plain questions and read-only checks need no workflow skill, as defined upstream. The full workflow is available at the absolute paths below; read files directly instead of relying on a globally installed Skill tool. Resolve referenced files relative to each skill directory.",
-    ...skills.map((name) => `ryugi:${name}: ${path.join(runtime.skillsDir, name, "SKILL.md")}`),
-    `Source workspace: ${cwd}. Inspect its reusable components, layouts and design rules there. Private Ryugi project: ${projectDir}. Artifacts must be written only to the paths returned by the tool; do not put them in the source workspace's .ryugi directory.`,
-    "Paseo adaptation overrides upstream host setup: replace ryugi / node app/ryugi.cjs commands with this session's ryugi tool and the same args. The tool selects the private CLI, environment and project directory. Do not invoke a system Ryugi, launcher, install/update, daemon, hook installer, or modify global agent skills/configuration/PATH. Do not install upstream harness integrations.",
-    "Never open, inspect or automate Ryugi in a browser and never invoke a browser automation skill for Ryugi. Return the actual local URL from start for the user to open. Report browser-only verification as pending; do not claim it passed. Do not publish to the cloud unless the user explicitly requests it.",
+    "Artideck (formerly Ryugi) is built into this Paseo session. It is a local artifact tool, not an external MCP service. Use the ryugi tool supplied in this session for artifact CLI operations.",
+    `At the start of each conversation, read ${entrySkill}/SKILL.md and follow its task routing, then read the stage skills it selects. The user does not need to mention Artideck or Ryugi: new requirements, design, implementation and debugging enter the appropriate workflow automatically. Plain questions and read-only checks need no workflow skill, as defined upstream. The full workflow is available at the absolute paths below; read files directly instead of relying on a globally installed Skill tool. Resolve referenced files relative to each skill directory.`,
+    ...skills.map((name) => `${skillPrefix}:${name}: ${path.join(runtime.skillsDir, name, "SKILL.md")}`),
+    `Source workspace: ${cwd}. Inspect its reusable components, layouts and design rules there. Private Artideck project: ${projectDir}. Artifacts must be written only to the paths returned by the tool; do not put them in the source workspace's .artideck or .ryugi directory.`,
+    "Paseo adaptation overrides upstream host setup: replace adeck / artideck / ryugi / node app/adeck.cjs / node app/ryugi.cjs commands with this session's ryugi tool and the same args. The tool selects the private CLI, environment and project directory. Do not invoke a system Artideck or Ryugi binary, launcher, install/update, daemon, hook installer, or modify global agent skills/configuration/PATH. Do not install upstream harness integrations.",
+    "Never open, inspect or automate Artideck in a browser and never invoke a browser automation skill for Artideck. Return the actual local URL from start for the user to open. Report browser-only verification as pending; do not claim it passed. Do not publish to the cloud unless the user explicitly requests it.",
     "Paseo monitor forwards submitted comments, choices, answers and withdrawals to this session so you can continue the task. Read complete feedback with the ryugi tool; acknowledge receipts only after applying their evidence. Do not fabricate user choices or acceptance. User instructions and existing project rules take priority.",
   ].join("\n");
 }
@@ -26,8 +28,8 @@ export function ryugiInstructions(runtime: Runtime, projectDir: string, cwd: str
 export function createRyugiTool(runtime: Runtime, projectDir: string, onStart: (output: string) => Promise<void>) {
   return defineAgentTool({
     name: "ryugi",
-    title: "Ryugi",
-    description: "Operate the isolated local Ryugi artifacts CLI. Pass command arguments, e.g. start --artifact document/design. Uses this workspace's private project, never opens a browser. Read the injected full Ryugi skills for workflow instructions.",
+    title: "Artideck",
+    description: "Operate the isolated local Artideck (formerly Ryugi) artifacts CLI. Pass command arguments, e.g. start --artifact document/design. Uses this workspace's private project, never opens a browser. Read the injected full workflow skills for instructions.",
     input: z.object({ args: z.array(z.string()).min(1) }),
     async execute({ args }, { signal }) {
       if (!commands.has(args[0])) return { text: "不支持该命令；此工具仅运行工件 CLI，不安装 launcher、hook 或更新全局配置。", isError: true };

@@ -105,10 +105,10 @@ export default function contribute(server: PluginServerContext) {
     const generation = tunnelGeneration;
     const settings = await remoteSettings.read();
     if (settings.status !== "ready" || !settings.values.password) {
-      throw new Error("请先在 Ryugi 插件的「远程访问」里设置访问密码。");
+      throw new Error("请先在插件的「远程访问」里设置访问密码。");
     }
     const url = await resolveUrl();
-    if (disposed || generation !== tunnelGeneration) throw new Error("Ryugi tunnel was closed. Open it again to start a new tunnel.");
+    if (disposed || generation !== tunnelGeneration) throw new Error("Artideck tunnel was closed. Open it again to start a new tunnel.");
     return { url: await tunnel.open(url, settings.values.password) };
   }
   server.handle(startTunnelRpc, () => openTunnel(async () => {
@@ -121,12 +121,12 @@ export default function contribute(server: PluginServerContext) {
     const info = JSON.parse(await readFile(path.join(runtime.serverHome, "server-info"), "utf8"));
     const ryugi = typeof info.url === "string" ? URL.parse(info.url) : null;
     if (!local || !ryugi?.port || local.port !== ryugi.port) {
-      throw new Error("Ryugi 服务端口已变更，请刷新会话工件入口。");
+      throw new Error("Artideck 服务端口已变更，请刷新会话工件入口。");
     }
     return local.href;
   }));
   const refresh = (agentId: string, workspaceId: string | null, context: PluginHandlerContext) => {
-    if (workspaceId && !disposed) void sessionData({ agentId, workspaceId }, context).catch((error) => console.error("[Ryugi] monitor 绑定失败", error));
+    if (workspaceId && !disposed) void sessionData({ agentId, workspaceId }, context).catch((error) => console.error("[Artideck] monitor 绑定失败", error));
   };
   const removeTurnHook = server.addHook("agent.turn.after", async ({ agent }, context) => { refresh(agent.id, agent.workspaceId, context); });
   const removeArchiveHook = server.addHook("agent.archive.after", async ({ agent }) => { monitors.remove(agent.id); openedArtifacts.delete(agent.id); });
@@ -134,7 +134,7 @@ export default function contribute(server: PluginServerContext) {
     if (request.purpose !== "interactive" || !request.workspaceId) return;
     const workspace = context.paseo.workspaces.ref(request.workspaceId);
     const ws = workspace.current() || await workspace.refresh();
-    if (!ws) throw new Error("Ryugi 工作区不可用");
+    if (!ws) throw new Error("Artideck 工作区不可用");
     const sessionRuntime = getPrivateRuntime();
     const projectDir = sessionRuntime.getProjectDir(ws.workspaceDirectory || ws.projectRootPath);
     setTimeout(() => refresh(request.agentId, request.workspaceId, context), 0);

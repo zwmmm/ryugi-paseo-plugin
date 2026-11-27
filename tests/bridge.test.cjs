@@ -82,7 +82,7 @@ test("发现全部八类工件，仅打开当前会话引用的本地页面", as
     const items = kinds.map((kind) => ({ artifact: `${kind}/example` }));
     items.push({ artifact: 'html/unreferenced' });
     for (const { artifact } of items) {
-      const folder = path.join(dir, '.ryugi/artifacts', artifact);
+      const folder = path.join(dir, '.artideck/artifacts', artifact);
       fs.mkdirSync(folder, { recursive: true });
       fs.writeFileSync(path.join(folder, '.artifact-id'), artifact === 'html/unreferenced' ? 'other-id' : `${artifact.split('/')[0]}-id`);
     }

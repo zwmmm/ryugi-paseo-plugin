@@ -34,13 +34,14 @@ test('full skills 使用私有绝对路径且注入会话工具，不改其他�
   const Module = require('node:module');
   const originalLoad = Module._load;
   try {
-    for (const name of ['using-ryugi', 'brainstorming', 'artifacts', 'executing-specs']) {
+    for (const name of ['using-adeck', 'brainstorming', 'artifacts', 'executing-specs']) {
       fs.mkdirSync(path.join(dir, name));
       fs.writeFileSync(path.join(dir, name, 'SKILL.md'), name);
     }
     const runtime = { runtimeDir: dir, skillsDir: dir, getProjectDir: () => '/private-project' };
     const prompt = ryugiInstructions(runtime, '/private-project', '/source');
-    assert.match(prompt, new RegExp(path.join(dir, 'brainstorming', 'SKILL.md')));
+    assert.match(prompt, /using-adeck\/SKILL\.md/);
+    assert.match(prompt, new RegExp(`adeck:brainstorming: ${path.join(dir, 'brainstorming', 'SKILL.md')}`));
     assert.match(prompt, /Never open, inspect or automate/);
     assert.match(prompt, /Source workspace: \/source/);
     Module._load = function (name, ...args) {

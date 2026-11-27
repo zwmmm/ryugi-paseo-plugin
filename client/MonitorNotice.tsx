@@ -17,7 +17,7 @@ type Translate = ReturnType<typeof useTranslation<typeof messages.resources.en>>
 
 export function parseMonitorNotice(text: string): Notice | undefined {
   const lines = text.split("\n");
-  const header = /^Ryugi monitor: (ryugi-comments|ryugi-choices|ryugi-answers)(?:（用户已撤回提交）)?$/.exec(lines[0]);
+  const header = /^(?:Artideck|Ryugi) monitor: (ryugi-comments|ryugi-choices|ryugi-answers)(?:（用户已撤回提交）)?$/.exec(lines[0]);
   if (!header) return;
   let event;
   try { event = JSON.parse(lines[2]); } catch { return; }

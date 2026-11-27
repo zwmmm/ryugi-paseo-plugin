@@ -92,7 +92,7 @@ test("插件在同一个设置页提供浏览器、远程访问和 Ryugi 更新�
   const settle = () => new Promise((resolve) => setImmediate(resolve));
   try {
     await settle(); await settle();
-    const text = 'Ryugi monitor: ryugi-answers\n通知\n' + JSON.stringify({ type: 'ryugi-answers', project: '/project', artifact: 'document/test', questions: 4 });
+    const text = 'Artideck monitor: ryugi-answers\n通知\n' + JSON.stringify({ type: 'ryugi-answers', project: '/project', artifact: 'document/test', questions: 4 });
     const replacement = transformer.transform({ item: { type: 'user_message', text }, phase: 'complete' });
     assert.equal(replacement.items[0].data.type, 'ryugi-answers');
     assert.equal(replacement.items[0].data.count, 4);
@@ -194,22 +194,22 @@ test("插件在同一个设置页提供浏览器、远程访问和 Ryugi 更新�
     assert.equal(renderBrowser().props.label, "工件浏览器");
     const renderDesign = () => versionSettings.type(versionSettings.props);
     assert.equal(renderDesign().props.disabled, true);
-    onRuntimeStatus({ version: "1.108.1", phase: "idle" });
+    onRuntimeStatus({ version: "1.117.1", phase: "idle" });
     const cell = renderDesign();
     assert.equal(cell.type, "SettingsAction");
-    assert.equal(cell.props.label, "Ryugi 运行时");
-    assert.match(cell.props.hint, /1\.108\.1/);
+    assert.equal(cell.props.label, "Artideck 运行时");
+    assert.match(cell.props.hint, /1\.117\.1/);
     assert.equal(cell.props.actionLabel, "手动更新");
     await cell.props.onPress();
     assert.deepEqual(runtimeCalls, ["ryugi.start-runtime-update"]);
-    onRuntimeStatus({ version: "1.108.1", phase: "updating" });
+    onRuntimeStatus({ version: "1.117.1", phase: "updating" });
     assert.equal(renderDesign().props.disabled, true);
     onRuntimeStatus({ version: "1.200.0", phase: "updated" });
     assert.match(renderDesign().props.hint, /1\.200\.0/);
     onRuntimeStatus({ version: "1.200.0", phase: "current" });
     assert.match(renderDesign().props.hint, /已是最新版本/);
     onRuntimeStatus({ version: "1.200.0", phase: "failed" });
-    assert.match(renderDesign().props.error, /更新 Ryugi 失败/);
+    assert.match(renderDesign().props.error, /更新 Artideck 失败/);
     assert.equal(renderDesign().props.disabled, false);
 
     browserState = { status: "error", error: "Connection closed" };
@@ -220,7 +220,7 @@ test("插件在同一个设置页提供浏览器、远程访问和 Ryugi 更新�
     locale = "en";
     assert.deepEqual(design.Component(designProps).props.children.map(({ props }) => props.title), ["General", "Remote access"]);
     assert.equal(renderBrowser().props.label, "Artifact browser");
-    assert.equal(renderDesign().props.label, "Ryugi runtime");
+    assert.equal(renderDesign().props.label, "Artideck runtime");
     assert.equal(renderBrowser().props.error, "Could not save the settings. Try again.");
     browserState = { status: "invalid", error: "已保存的设置无效" };
     assert.equal(renderBrowser().props.error, "The saved settings are invalid. Restore the defaults to continue.");

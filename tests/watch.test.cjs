@@ -8,8 +8,8 @@ const { watchArtifacts } = require("../server/watchArtifacts.ts");
 
 test("目录删除和重建后仍能通知评论变化，停止后释放监听", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ryugi-watch-"));
-  const ryugi = path.join(dir, ".ryugi");
-  const artifacts = path.join(ryugi, "artifacts");
+  const artideck = path.join(dir, ".artideck");
+  const artifacts = path.join(artideck, "artifacts");
   const artifact = path.join(artifacts, "artboard", "login");
   const comments = path.join(artifact, "comments.json");
   let notifications = 0;
@@ -28,6 +28,7 @@ test("目录删除和重建后仍能通知评论变化，停止后释放监听",
     try {
       change();
       await changed;
+      await delay(50);
     } finally {
       clearTimeout(timeout);
       notify = undefined;
@@ -35,12 +36,13 @@ test("目录删除和重建后仍能通知评论变化，停止后释放监听",
   };
 
   try {
+    await delay(50);
     await waitForChange(() => fs.mkdirSync(artifact, { recursive: true }));
     await waitForChange(() => fs.writeFileSync(comments, '{"threads":[]}'));
     await waitForChange(() => fs.rmSync(artifacts, { recursive: true }));
     await waitForChange(() => fs.mkdirSync(artifact, { recursive: true }));
     await waitForChange(() => fs.writeFileSync(comments, '{"threads":["replacement"]}'));
-    await waitForChange(() => fs.rmSync(ryugi, { recursive: true }));
+    await waitForChange(() => fs.rmSync(artideck, { recursive: true }));
     await waitForChange(() => fs.mkdirSync(artifact, { recursive: true }));
     await waitForChange(() => fs.writeFileSync(comments, '{"threads":["recreated"]}'));
 
@@ -70,12 +72,15 @@ test("所有工件主文件的内容修改都会刷新入口，忽略服务状�
   try {
     const files = ['document/a/doc.xml', 'artboard/a/canvas.json', 'html/a/index.html', 'slides/a/index.html', 'whiteboard/a/scene.excalidraw', 'verify/a/verify.xml', 'report/a/report.tsx', 'storyboard/a/storyboard.xml'];
     for (let i = 0; i < files.length; i++) {
-      callbacks.get('/project/.ryugi/artifacts')('change', files[i]);
+      callbacks.get('/project/.artideck/artifacts')('change', files[i]);
       await delay(200);
       assert.equal(notifications, i + 1, files[i]);
     }
-    callbacks.get('/project/.ryugi/artifacts')('change', '.state/snapshot.json');
+    callbacks.get('/project/.ryugi/artifacts')('change', files[0]);
     await delay(200);
-    assert.equal(notifications, files.length);
+    assert.equal(notifications, files.length + 1);
+    callbacks.get('/project/.artideck/artifacts')('change', '.state/snapshot.json');
+    await delay(200);
+    assert.equal(notifications, files.length + 1);
   } finally { stop(); }
 });

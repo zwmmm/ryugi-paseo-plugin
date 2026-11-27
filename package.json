@@ -28,7 +28,7 @@
     "typescript": "^5.9.3",
     "zod": "^4.4.3"
   },
-  "description": "Open Ryugi documents and artboards from Paseo and send feedback back to the Agent session that created them.",
+  "description": "Open Artideck (formerly Ryugi) documents and artboards from Paseo and send feedback back to the Agent session that created them.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/zwmmm/ryugi-paseo-plugin.git"

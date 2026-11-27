@@ -24,10 +24,18 @@ type Options = {
   subscribe?: (subscription: Subscription) => Promise<void>;
 };
 
-export function monitorSocketPath(serverHome = process.env.RYUGI_SERVER_HOME || path.join(os.homedir(), ".ryugi/server")) {
+function defaultServerHome() {
+  const home = os.homedir();
+  const store = !fs.existsSync(path.join(home, ".artideck")) && fs.existsSync(path.join(home, ".ryugi"))
+    ? path.join(home, ".ryugi")
+    : path.join(home, ".artideck");
+  return path.join(store, "server");
+}
+
+export function monitorSocketPath(serverHome = process.env.RYUGI_SERVER_HOME || defaultServerHome()) {
   if (process.env.RYUGI_HUB_SOCKET) return process.env.RYUGI_HUB_SOCKET;
   const home = path.resolve(serverHome);
-  const own = home === path.join(os.homedir(), ".ryugi/server")
+  const own = home === defaultServerHome()
     ? ""
     : `-${createHash("sha256").update(home).digest("hex").slice(0, 12)}`;
   return path.join(process.env.RYUGI_RUNTIME_DIR || `/tmp/ryugi-${process.getuid?.() ?? 0}`, `hub${own}.sock`);
@@ -49,12 +57,12 @@ export async function subscribeMonitor(serverHome: string, subscription: Subscri
       body: JSON.stringify(subscription),
       signal: controller.signal,
     });
-    if (!response.ok) throw new Error(`Ryugi subscription failed: ${response.status}`);
+    if (!response.ok) throw new Error(`Artideck subscription failed: ${response.status}`);
   } finally { clearTimeout(timeout); }
 }
 
 export function startMonitorChannel(options: Options) {
-  const home = path.resolve(options.serverHome || process.env.RYUGI_SERVER_HOME || path.join(os.homedir(), ".ryugi/server"));
+  const home = path.resolve(options.serverHome || process.env.RYUGI_SERVER_HOME || defaultServerHome());
   const retryMs = options.retryMs ?? 1000;
   const subscribe = options.subscribe || ((subscription: Subscription) => subscribeMonitor(home, subscription));
   let bindings = [...options.bindings];

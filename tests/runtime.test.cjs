@@ -3,19 +3,27 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
-const { getPrivateRuntime, getProjectDir, RYUGI_VERSION, RYUGI_WORKFLOW_COMMIT } = require("../server/privateRuntime.ts");
+const { getPrivateRuntime, getProjectDir, readRuntimeRelease } = require("../server/privateRuntime.ts");
 
-function fixture(dir) {
-  const pkg = path.join(dir, "node_modules", "ryugi-artifacts");
+const FIXTURE_VERSION = "1.117.1";
+const FIXTURE_COMMIT = "1234567890abcdef1234567890abcdef12345678";
+
+function fixture(dir, {
+  packageName = "artideck",
+  entrySkill = "using-adeck",
+  version = FIXTURE_VERSION,
+  workflowCommit = FIXTURE_COMMIT,
+} = {}) {
+  const pkg = path.join(dir, "node_modules", packageName);
   fs.mkdirSync(path.join(pkg, "dist"), { recursive: true });
-  fs.writeFileSync(path.join(pkg, "package.json"), JSON.stringify({ version: RYUGI_VERSION }));
+  fs.writeFileSync(path.join(pkg, "package.json"), JSON.stringify({ version }));
   fs.writeFileSync(path.join(pkg, "dist", "cli.cjs"), "");
-  for (const name of ["using-ryugi", "brainstorming", "artifacts", "executing-specs"]) {
+  for (const name of [entrySkill, "brainstorming", "artifacts", "executing-specs"]) {
     const skills = path.join(dir, "workflow", "skills", name);
     fs.mkdirSync(skills, { recursive: true });
     fs.writeFileSync(path.join(skills, "SKILL.md"), `# ${name}`);
   }
-  fs.writeFileSync(path.join(dir, "runtime.json"), JSON.stringify({ version: RYUGI_VERSION, workflowCommit: RYUGI_WORKFLOW_COMMIT }));
+  fs.writeFileSync(path.join(dir, "runtime.json"), JSON.stringify({ package: packageName, version, workflowCommit }));
 }
 
 test("专用运行时使用底层 CLI 和隔离服务状态，不改变当前进程环境", () => {
@@ -32,7 +40,7 @@ test("专用运行时使用底层 CLI 和隔离服务状态，不改变当前进
     process.env.PASEO_RYUGI_RUNTIME_DIR = dir;
     const runtime = getPrivateRuntime();
     socketDir = runtime.env.RYUGI_RUNTIME_DIR;
-    assert.equal(runtime.cliPath, path.join(dir, "node_modules/ryugi-artifacts/dist/cli.cjs"));
+    assert.equal(runtime.cliPath, path.join(dir, "node_modules/artideck/dist/cli.cjs"));
     assert.equal(runtime.skillsDir, path.join(dir, "workflow/skills"));
     assert.equal(runtime.serverHome, path.join(dir, "state/server"));
     assert.equal(runtime.env.RYUGI_CLI_PATH, runtime.cliPath);
@@ -57,7 +65,7 @@ test("专用运行时使用底层 CLI 和隔离服务状态，不改变当前进
     assert.equal(process.env.RYUGI_SERVER_HOME, originalHome);
     assert.ok(Buffer.byteLength(runtime.socketPath) < 104);
     assert.equal(getPrivateRuntime().env.RYUGI_RUNTIME_DIR, socketDir);
-    fs.writeFileSync(path.join(dir, "node_modules/ryugi-artifacts/package.json"), JSON.stringify({ version: "0.0.0" }));
+    fs.writeFileSync(path.join(dir, "node_modules/artideck/package.json"), JSON.stringify({ version: "0.0.0" }));
     assert.throws(getPrivateRuntime, /npm run setup:runtime/);
     fixture(dir);
     fs.rmSync(path.join(dir, "workflow/skills/artifacts/SKILL.md"));
@@ -77,14 +85,28 @@ test("专用运行时使用底层 CLI 和隔离服务状态，不改变当前进
   }
 });
 
-test("安装固定版本，禁用 npm scripts/git hooks，并可重复执行", async () => {
-  const { setupRuntime } = await import("../scripts/setup-runtime.mjs");
+test("兼容旧版 ryugi-artifacts 与 using-ryugi 运行时布局", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ryugi-legacy-runtime-"));
+  try {
+    fixture(dir, { packageName: "ryugi-artifacts", entrySkill: "using-ryugi", version: "1.108.1" });
+    const release = readRuntimeRelease(dir, "1.108.1");
+    assert.equal(release.cliPath, path.join(dir, "node_modules/ryugi-artifacts/dist/cli.cjs"));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("动态解析并安装最新稳定版 artideck，禁用 npm scripts/git hooks，并可重复执行", async () => {
+  const { setupRuntime, ARTIDECK_REPOSITORY } = await import("../scripts/setup-runtime.mjs");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ryugi-setup-test-"));
   const calls = [];
   let checkedOut = false;
   const run = (command, args) => {
     calls.push({ command, args });
-    if (command === "npm") {
+    if (command === "npm" && args[0] === "view") {
+      return JSON.stringify(FIXTURE_VERSION);
+    }
+    if (command === "npm" && args[0] === "install") {
       fixture(dir);
       fs.rmSync(path.join(dir, "runtime.json"));
     } else {
@@ -93,22 +115,40 @@ test("安装固定版本，禁用 npm scripts/git hooks，并可重复执行", a
       if (args.includes("checkout")) checkedOut = true;
       if (args.includes("rev-parse")) {
         if (!checkedOut) throw new Error("missing HEAD");
-        return `${RYUGI_WORKFLOW_COMMIT}\n`;
+        return `${FIXTURE_COMMIT}\n`;
       }
     }
     return "";
   };
   try {
     assert.equal(setupRuntime({ runtimeDir: dir, run }), dir);
-    assert.deepEqual(calls.find((call) => call.command === "npm").args, ["ci", "--prefix", dir, "--ignore-scripts", "--no-audit", "--no-fund"]);
-    const lock = JSON.parse(fs.readFileSync(path.join(dir, "package-lock.json"), "utf8"));
-    assert.equal(lock.packages["node_modules/ryugi-artifacts"].version, RYUGI_VERSION);
-    assert.match(lock.packages["node_modules/ryugi-artifacts"].integrity, /^sha512-/);
-    assert.ok(calls.some((call) => call.args.includes("fetch") && call.args.includes(RYUGI_WORKFLOW_COMMIT)));
+    assert.deepEqual(calls.find((call) => call.command === "npm" && call.args[0] === "view").args, [
+      "view",
+      "artideck@latest",
+      "version",
+      "--json",
+      "--registry=https://registry.npmjs.org/",
+    ]);
+    assert.deepEqual(calls.find((call) => call.command === "npm" && call.args[0] === "install").args, [
+      "install",
+      `artideck@${FIXTURE_VERSION}`,
+      "--prefix",
+      dir,
+      "--save-exact",
+      "--ignore-scripts",
+      "--no-audit",
+      "--no-fund",
+      "--registry=https://registry.npmjs.org/",
+    ]);
+    assert.ok(calls.some((call) => call.args.includes("fetch") && call.args.includes(ARTIDECK_REPOSITORY) && call.args.includes(`refs/tags/v${FIXTURE_VERSION}`)));
     const before = calls.length;
     setupRuntime({ runtimeDir: dir, run });
     assert.deepEqual(calls.slice(before).map((call) => call.args.slice(4)), [["rev-parse", "HEAD"]]);
-    assert.equal(JSON.parse(fs.readFileSync(path.join(dir, "runtime.json"))).workflowCommit, RYUGI_WORKFLOW_COMMIT);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, "runtime.json"), "utf8")), {
+      package: "artideck",
+      version: FIXTURE_VERSION,
+      workflowCommit: FIXTURE_COMMIT,
+    });
     fs.rmSync(path.join(dir, "workflow/skills/artifacts/SKILL.md"));
     assert.throws(() => setupRuntime({ runtimeDir: dir, run }), /缺少 artifacts skill/);
   } finally {
@@ -128,12 +168,12 @@ test("手动更新同时启用新 CLI 和工作流，并保留原有工件及服
     if (command === "npm" && args[0] === "view") return JSON.stringify(publishedVersion);
     if (command === "npm") {
       installs++;
-      assert.ok(args.includes(`ryugi-artifacts@${release}`));
+      assert.ok(args.includes(`artideck@${release}`));
       assert.ok(args.includes("--ignore-scripts"));
-      fixture(cwd);
-      fs.writeFileSync(path.join(cwd, "node_modules/ryugi-artifacts/package.json"), JSON.stringify({ version: release }));
-      assert.equal(getPrivateRuntime().version, "1.108.1", "安装期间继续使用旧版本");
+      fixture(cwd, { version: release });
+      assert.equal(getPrivateRuntime().version, FIXTURE_VERSION, "安装期间继续使用旧版本");
     } else if (args.includes("fetch")) {
+      assert.ok(args.includes("https://github.com/Innei/artideck.git"));
       assert.ok(args.includes(`refs/tags/v${release}`));
       if (breakWorkflow) throw new Error("fetch failed");
     }
@@ -144,7 +184,7 @@ test("手动更新同时启用新 CLI 和工作流，并保留原有工件及服
     process.env.PASEO_RYUGI_RUNTIME_DIR = dir;
     const original = getPrivateRuntime();
     socketDir = original.env.RYUGI_RUNTIME_DIR;
-    assert.equal(original.version, "1.108.1");
+    assert.equal(original.version, FIXTURE_VERSION);
     const { updatePrivateRuntime } = require("../server/runtimeUpdate.ts");
     const workspace = path.join(dir, "workspace");
     const project = original.getProjectDir(workspace);
@@ -159,7 +199,7 @@ test("手动更新同时启用新 CLI 和工作流，并保留原有工件及服
     assert.equal(await updatePrivateRuntime(dir, new AbortController().signal, run), "updated");
     const updated = getPrivateRuntime();
     assert.equal(updated.version, release);
-    assert.equal(updated.cliPath, path.join(dir, "releases", release, "node_modules/ryugi-artifacts/dist/cli.cjs"));
+    assert.equal(updated.cliPath, path.join(dir, "releases", release, "node_modules/artideck/dist/cli.cjs"));
     assert.equal(updated.skillsDir, path.join(dir, "releases", release, "workflow/skills"));
     assert.equal(updated.serverHome, original.serverHome);
     assert.equal(updated.socketPath, original.socketPath);
@@ -168,7 +208,7 @@ test("手动更新同时启用新 CLI 和工作流，并保留原有工件及服
     assert.ok(fs.existsSync(original.cliPath), "已打开的会话仍可使用原运行时");
 
     assert.equal(await updatePrivateRuntime(dir, new AbortController().signal, run), "current");
-    publishedVersion = "1.108.1";
+    publishedVersion = FIXTURE_VERSION;
     assert.equal(await updatePrivateRuntime(dir, new AbortController().signal, run), "current");
     assert.equal(installs, 2);
     assert.equal(getPrivateRuntime().version, release);

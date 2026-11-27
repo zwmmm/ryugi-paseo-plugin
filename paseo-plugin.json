@@ -1,7 +1,7 @@
 {
   "id": "ryugi-paseo",
   "name": "Ryugi Monitor",
-  "description": "Open Ryugi documents and artboards from Paseo and send feedback back to the Agent session that created them.",
+  "description": "Open Artideck (formerly Ryugi) documents and artboards from Paseo and send feedback back to the Agent session that created them.",
   "requirements": {
     "paseo": ">=0.17.3"
   },
@@ -14,7 +14,7 @@
   "translations": {
     "zh-CN": {
       "name": "Ryugi Monitor",
-      "description": "在 Paseo 打开 Ryugi 文档和画板，让反馈回到创建工件的 Agent 会话。"
+      "description": "在 Paseo 打开 Artideck（原 Ryugi）文档和画板，让反馈回到创建工件的 Agent 会话。"
     }
   },
   "icon": "assets/ryugi-icon.png",

@@ -46,7 +46,7 @@ export default function contribute(client: PluginClientContext) {
     );
   }
 
-  const removeBrowserScreen = client.addScreen({ id: "artifact-browser", title: "Ryugi", Component: ArtifactBrowser });
+  const removeBrowserScreen = client.addScreen({ id: "artifact-browser", title: "Artideck", Component: ArtifactBrowser });
   const removeDesignSettings = client.addSettingsScreen({ id: "design", title: messages.message("runtime.settings"), icon: "Palette", Component: DesignSettings });
   const removeTransformer = client.addTimelineTransformer({
     id: "ryugi-monitor-notice",

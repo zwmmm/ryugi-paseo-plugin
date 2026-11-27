@@ -1,7 +1,0 @@
-{
-  "name": "ryugi-paseo-runtime",
-  "private": true,
-  "dependencies": {
-    "ryugi-artifacts": "1.108.1"
-  }
-}

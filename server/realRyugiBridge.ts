@@ -33,7 +33,10 @@ export class RealRyugiBridge {
   }
 
   async sessionArtifacts(projectDir: string, texts: string[]) {
-    if (!fs.existsSync(path.join(projectDir, ".ryugi", "artifacts"))) return [];
+    const artifactDirs = [".artideck", ".ryugi"]
+      .map((folder) => path.join(projectDir, folder, "artifacts"))
+      .filter((dir) => fs.existsSync(dir));
+    if (!artifactDirs.length) return [];
     const { data } = await this.run(["get", "--project-dir", projectDir, "--json"]);
     const paths = new Set<string>();
     for (const text of texts) {
@@ -47,8 +50,10 @@ export class RealRyugiBridge {
     const artifacts: Artifact[] = [];
     for (const { artifact } of data.items as Array<{ artifact: string }>) {
       if (!artifactTypes.some((type) => artifact.startsWith(`${type}/`))) continue;
-      const idFile = path.join(projectDir, ".ryugi", "artifacts", artifact, ".artifact-id");
-      if (!fs.existsSync(idFile)) continue;
+      const idFile = artifactDirs
+        .map((dir) => path.join(dir, artifact, ".artifact-id"))
+        .find((file) => fs.existsSync(file));
+      if (!idFile) continue;
       const id = fs.readFileSync(idFile, "utf8").trim();
       const type = artifact.split("/")[0];
       if (!id || !paths.has(`/${type}/${id}`)) continue;

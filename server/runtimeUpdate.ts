@@ -8,7 +8,8 @@ import { compareVersions, getRuntimeRelease, readRuntimeRelease, stableVersion }
 
 const exec = promisify(execFile);
 const registry = "--registry=https://registry.npmjs.org/";
-const repository = "https://github.com/Innei/ryugi.git";
+const repository = "https://github.com/Innei/artideck.git";
+const packageName = "artideck";
 
 export async function updatePrivateRuntime(
   runtimeDir: string,
@@ -18,8 +19,8 @@ export async function updatePrivateRuntime(
     return stdout;
   },
 ) {
-  const version: unknown = JSON.parse(await run("npm", ["view", "ryugi-artifacts@latest", "version", "--json", registry], runtimeDir));
-  if (typeof version !== "string" || !stableVersion.test(version)) throw new Error("Invalid Ryugi release version");
+  const version: unknown = JSON.parse(await run("npm", ["view", `${packageName}@latest`, "version", "--json", registry], runtimeDir));
+  if (typeof version !== "string" || !stableVersion.test(version)) throw new Error("Invalid Artideck release version");
   if (compareVersions(version, getRuntimeRelease(runtimeDir).version) <= 0) return "current";
 
   const releasesDir = path.join(runtimeDir, "releases");
@@ -27,7 +28,7 @@ export async function updatePrivateRuntime(
   const staged = fs.mkdtempSync(path.join(releasesDir, ".install-"));
   try {
     fs.writeFileSync(path.join(staged, "package.json"), JSON.stringify({ private: true }));
-    await run("npm", ["install", `ryugi-artifacts@${version}`, "--save-exact", "--ignore-scripts", "--no-audit", "--no-fund", registry], staged);
+    await run("npm", ["install", `${packageName}@${version}`, "--save-exact", "--ignore-scripts", "--no-audit", "--no-fund", registry], staged);
     const workflowDir = path.join(staged, "workflow");
     fs.mkdirSync(workflowDir, { recursive: true });
     const git = (...args: string[]) => run("git", ["-c", "core.hooksPath=/dev/null", ...args], workflowDir);
@@ -35,7 +36,7 @@ export async function updatePrivateRuntime(
     await git("fetch", "--depth", "1", repository, `refs/tags/v${version}`);
     await git("checkout", "--detach", "FETCH_HEAD");
     readRuntimeRelease(staged, version);
-    if (signal.aborted) throw new Error("Ryugi update was cancelled");
+    if (signal.aborted) throw new Error("Artideck update was cancelled");
     if (compareVersions(version, getRuntimeRelease(runtimeDir).version) <= 0) return "current";
     try {
       fs.renameSync(staged, path.join(releasesDir, version));
