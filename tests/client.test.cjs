@@ -45,6 +45,7 @@ test("插件在同一个设置页提供浏览器、远程访问和 Ryugi 更新�
   let contribute;
   try { contribute = require("../index.client.tsx").default; } finally { Module._load = load; }
   let observer;
+  let backgroundObserver;
   let onChange;
   let onBrowserChange;
   const settingsScreens = new Map();
@@ -54,6 +55,9 @@ test("插件在同一个设置页提供浏览器、远程访问和 Ryugi 更新�
   const buttons = new Map();
   let artifacts = [{ artifact: "artboard/login", url: "http://localhost/x" }];
   const agent = { id: "agent", workspaceId: "ws" };
+  const bot = { id: "bot", workspaceId: "bot-ws", metadata: { "personal-assistants.bot-id": "bot-profile" } };
+  const helper = { id: "helper", workspaceId: "helper-ws", metadata: {} };
+  const backgroundChecks = [];
   let transformer;
   let renderer;
   let screen;
@@ -73,9 +77,16 @@ test("插件在同一个设置页提供浏览器、远程访问和 Ryugi 更新�
     openScreen: (value) => { route = value; renderScreen(desktop); },
     addTimelineTransformer: (value) => { transformer = value; return () => {}; },
     addTimelineRenderer: (value) => { renderer = value; return () => {}; },
-    addComposerPill: ({ id, button }) => { active.add(id); buttons.set(id, button); pill = button; return { remove: () => active.delete(id) }; },
-    subscribe: (contract, _input, callback) => {
-      if (contract.name === "ryugi.workspace-changes") onChange = callback;
+    addComposerPill: ({ id, agentId, workspaceId, button }) => {
+      active.add(id); buttons.set(id, button);
+      if (agentId === agent.id) pill = button;
+      else assert.deepEqual({ id, agentId, workspaceId }, { id: "ryugi-document", agentId: bot.id, workspaceId: bot.workspaceId });
+      return { remove: () => active.delete(id) };
+    },
+    subscribe: (contract, input, callback) => {
+      if (contract.name === "ryugi.workspace-changes") {
+        if (input.workspaceId === agent.workspaceId) onChange = callback;
+      }
       else onBrowserChange = callback;
       return Object.assign(() => {}, { ready: Promise.resolve() });
     },
@@ -84,14 +95,30 @@ test("插件在同一个设置页提供浏览器、远程访问和 Ryugi 更新�
         remoteCalls.push(input);
         return { url: "https://client-test.trycloudflare.com/html/updated-id?key=new" };
       }
+      if (input.agentId !== agent.id) {
+        backgroundChecks.push(input.agentId);
+        return { artifacts: [{ artifact: "document/promo", url: "http://localhost/document/promo" }] };
+      }
       return { artifacts, localProbe: probe };
     },
-    paseo: { agents: { list: async () => ({ subscription: { subscribe: (o) => { observer = o; o.snapshot({ entries: [{ agent }] }); } } }) } },
+    paseo: { agents: { list: async ({ filter }) => ({ subscription: { subscribe: (o) => {
+      if (filter?.includeBackground) {
+        backgroundObserver = o;
+        o.snapshot({ entries: [agent, bot, helper].map((agent) => ({ agent })) });
+      } else {
+        observer = o;
+        o.snapshot({ entries: [{ agent }] });
+      }
+    } } }) } },
   };
   const cleanup = contribute(client);
   const settle = () => new Promise((resolve) => setImmediate(resolve));
   try {
     await settle(); await settle();
+    assert.deepEqual([...active].sort(), ["ryugi-artboard", "ryugi-document"]);
+    assert.deepEqual(backgroundChecks, [bot.id]);
+    backgroundObserver.update({ type: "agent_update", payload: { kind: "upsert", agent: { ...bot, metadata: {} } } });
+    assert.deepEqual([...active], ["ryugi-artboard"]);
     const text = 'Artideck monitor: ryugi-answers\n通知\n' + JSON.stringify({ type: 'ryugi-answers', project: '/project', artifact: 'document/test', questions: 4 });
     const replacement = transformer.transform({ item: { type: 'user_message', text }, phase: 'complete' });
     assert.equal(replacement.items[0].data.type, 'ryugi-answers');

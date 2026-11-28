@@ -12,6 +12,7 @@ import { artifactTypes, type ArtifactType } from "./shared/artifacts.js";
 import { browserChanges, defaultArtifactBrowser, type ArtifactBrowser as BrowserPreference } from "./shared/browserSettings.js";
 
 const artifactIcons = { document: "FileText", artboard: "LayoutGrid", html: "Code", slides: "Presentation", whiteboard: "Pencil", verify: "ClipboardCheck", report: "ChartNoAxesCombined", storyboard: "Clapperboard" };
+const botMetadataKey = "personal-assistants.bot-id";
 
 export default function contribute(client: PluginClientContext) {
   let nextRequestId = 0;
@@ -119,12 +120,51 @@ export default function contribute(client: PluginClientContext) {
     }
     void check(agent.id);
   };
-  void client.paseo.agents.list({ subscribe: {}, signal: lifetime.signal }).then(({ subscription }) => {
-    subscription.subscribe({
-      snapshot: ({ entries }) => { for (const id of agents.keys()) remove(id); for (const { agent } of entries) register(agent); },
-      update: (message) => { if (message.type !== "agent_update") return; const update = message.payload; if (update.kind === "upsert") register(update.agent); else remove(update.agentId); },
-    });
-  }).catch((error) => { if (!lifetime.signal.aborted) console.error("[Ryugi] 会话订阅失败", error); });
+  type Agent = Parameters<typeof register>[0];
+  const regularAgents = new Map<string, Agent>();
+  const botAgents = new Map<string, Agent>();
+  const syncAgent = (id: string) => {
+    const agent = regularAgents.get(id) ?? botAgents.get(id);
+    if (agent) register(agent);
+    else remove(id);
+  };
+  const watchAgents = (includeBackground: boolean, directory: Map<string, Agent>) => {
+    const accepts = (agent: Agent & { metadata?: Readonly<Record<string, unknown>> }) => {
+      const botId = agent.metadata?.[botMetadataKey];
+      return !includeBackground || (typeof botId === "string" && botId.length > 0);
+    };
+    void client.paseo.agents.list({
+      filter: includeBackground ? { includeBackground: true } : undefined,
+      subscribe: {}, signal: lifetime.signal,
+    }).then(({ subscription }) => {
+      if (lifetime.signal.aborted) return;
+      subscription.subscribe({
+        snapshot: ({ entries }) => {
+          const affected = new Set(directory.keys());
+          directory.clear();
+          for (const { agent } of entries) {
+            if (!accepts(agent)) continue;
+            directory.set(agent.id, agent);
+            affected.add(agent.id);
+          }
+          for (const id of affected) syncAgent(id);
+        },
+        update: (message) => {
+          if (message.type !== "agent_update") return;
+          const update = message.payload;
+          if (update.kind === "upsert" && accepts(update.agent)) {
+            directory.set(update.agent.id, update.agent);
+            syncAgent(update.agent.id);
+          } else {
+            const id = update.kind === "upsert" ? update.agent.id : update.agentId;
+            if (directory.delete(id)) syncAgent(id);
+          }
+        },
+      });
+    }).catch((error) => { if (!lifetime.signal.aborted) console.error("[Ryugi] 会话订阅失败", error); });
+  };
+  watchAgents(false, regularAgents);
+  watchAgents(true, botAgents);
   const timer = setInterval(() => { for (const id of agents.keys()) void check(id); }, 60000);
   return () => { lifetime.abort(); clearInterval(timer); for (const id of agents.keys()) remove(id); removeTransformer(); removeRenderer(); removeBrowserScreen(); removeDesignSettings(); };
 }
